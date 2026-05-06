@@ -206,8 +206,9 @@
     }
 
     let currentMode = "tram";
+    let modeChangePending = false;
 
-    function setMode(mode, fromServer) {
+    async function setMode(mode, fromServer) {
       currentMode = mode;
       document.querySelectorAll(".tab").forEach(b => {
         const active = b.dataset.mode === mode;
@@ -218,11 +219,15 @@
         p.hidden = p.dataset.pane !== mode;
       });
       if (!fromServer) {
-        fetch("/api/mode", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode }),
-        }).catch(() => {});
+        modeChangePending = true;
+        try {
+          await fetch("/api/mode", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode }),
+          });
+        } catch (_) { /* ignore — refresh will recover */ }
+        finally { modeChangePending = false; }
       }
     }
 
@@ -231,7 +236,7 @@
         const res  = await fetch("/api/state");
         const data = await res.json();
 
-        if (data.mode && data.mode !== currentMode) setMode(data.mode, true);
+        if (!modeChangePending && data.mode && data.mode !== currentMode) setMode(data.mode, true);
         const frame = currentMode === "text" ? renderTextFrame(data) : renderTramFrame(data);
         document.getElementById("preview").innerHTML = frame;
 
