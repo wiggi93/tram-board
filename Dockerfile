@@ -11,7 +11,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py config.py tram.py ./
 COPY templates ./templates
-COPY static ./static
 COPY fonts ./fonts
 
 RUN mkdir -p /app/data
