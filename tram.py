@@ -91,6 +91,10 @@ class BoardState:
         with self._lock:
             return list(self._departures), list(self._changed_at)
 
+    def get_station_city(self) -> str:
+        with self._lock:
+            return self._station_city
+
 
 # ── EFA API ───────────────────────────────────────────────────────────────────
 
@@ -152,10 +156,45 @@ def parse_departures(events: list[dict]) -> list[Departure]:
         dep_str     = event.get("departureTimeEstimated") or event.get("departureTimePlanned")
         if not dep_str:
             continue
-        dt      = datetime.fromisoformat(dep_str.replace("Z", "+00:00"))
-        minutes = max(0, int((dt - now).total_seconds() / 60))
+        dt   = datetime.fromisoformat(dep_str.replace("Z", "+00:00"))
+        secs = (dt - now).total_seconds()
+        if secs < -60:                     # already departed more than a minute ago
+            continue
+        minutes = max(0, int(secs / 60))
         result.append(Departure(line=line, destination=destination, minutes=minutes))
     return sorted(result, key=lambda d: d.minutes)
+
+
+# ── Display polish ────────────────────────────────────────────────────────────
+
+BUSY_WINDOW_MIN = 5    # if DISPLAY_ROWS+ trams arrive within this window, the stop is "busy"
+
+
+def trim_for_display(departures: list[Departure], city: str = "") -> list[Departure]:
+    """At busy hubs (e.g. Köln Neumarkt) the next several departures cluster in
+    the same minute and dominate the board. When that happens, strip the
+    redundant parent-city prefix from destinations and dedupe by
+    (line, destination) so each row shows a distinct route. Quiet stops are
+    returned unchanged.
+    """
+    is_busy = (
+        len(departures) >= DISPLAY_ROWS
+        and departures[DISPLAY_ROWS - 1].minutes <= BUSY_WINDOW_MIN
+    )
+    if not is_busy:
+        return departures
+
+    prefix = f"{city} " if city else ""
+    seen:  set[tuple[str, str]] = set()
+    out:   list[Departure] = []
+    for d in departures:
+        dest = d.destination[len(prefix):] if prefix and d.destination.startswith(prefix) else d.destination
+        key  = (d.line, dest)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(Departure(line=d.line, destination=dest, minutes=d.minutes))
+    return out
 
 
 # ── Background fetch loop ─────────────────────────────────────────────────────
@@ -178,6 +217,7 @@ def fetch_loop(
             try:
                 events     = fetch_stop_events(stop_id)
                 departures = parse_departures(events)
+                departures = trim_for_display(departures, city=board.get_station_city())
                 board.update(departures)
                 for dep in departures[:DISPLAY_ROWS]:
                     log.info("→ %s to %s in %d min", dep.line, dep.destination, dep.minutes)
