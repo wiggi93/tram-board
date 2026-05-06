@@ -18,6 +18,7 @@ RUN mkdir -p /build/out && \
     if [ "$WITH_LED" = "1" ]; then \
       git clone https://github.com/hzeller/rpi-rgb-led-matrix.git /tmp/matrix && \
       cd /tmp/matrix && git checkout "$RGBMATRIX_REF" && \
+      sed -i 's/ -march=native//g; s/ -mtune=native//g' lib/Makefile && \
       make build-python PYTHON=$(which python3) && \
       cp -r /tmp/matrix/bindings/python/. /build/out/; \
     fi
