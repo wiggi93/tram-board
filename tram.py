@@ -21,10 +21,11 @@ log = logging.getLogger(__name__)
 
 # ── EFA endpoints ─────────────────────────────────────────────────────────────
 
-API_URL          = "https://efa.de/efa/XML_DM_REQUEST"
-STOPFINDER_URL   = "https://efa.de/efa/XML_STOPFINDER_REQUEST"
+EFA_BASE         = "https://efa.vrr.de/standard"   # broader coverage than efa.de (includes NRW)
+API_URL          = f"{EFA_BASE}/XML_DM_REQUEST"
+STOPFINDER_URL   = f"{EFA_BASE}/XML_STOPFINDER_REQUEST"
 API_VERSION      = "10.6.14.22"
-STADTBAHN_CLASS  = 3                  # product.class value for Stadtbahn / tram
+TRAM_CLASSES     = {3, 4}             # 3 = Stadtbahn (light rail), 4 = Straßenbahn
 
 DISPLAY_ROWS     = 4
 FETCH_INTERVAL   = 30                 # seconds between API polls
@@ -143,7 +144,7 @@ def parse_departures(events: list[dict]) -> list[Departure]:
     result: list[Departure] = []
     for event in events:
         transport = event.get("transportation", {})
-        if transport.get("product", {}).get("class") != STADTBAHN_CLASS:
+        if transport.get("product", {}).get("class") not in TRAM_CLASSES:
             continue
         line        = transport.get("number", "?")
         raw_dest    = transport.get("destination", {}).get("name", "?")

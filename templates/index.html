@@ -69,9 +69,10 @@
       border-radius: 8px;
       border: 1px solid var(--border);
       white-space: pre;
-      letter-spacing: 0.5px;
+      font-variant-ligatures: none;
+      font-feature-settings: "liga" 0, "calt" 0;
     }
-    .preview .badge { background: var(--badge-bg); color: #fff; padding: 0 2px; border-radius: 2px; }
+    .preview .badge { background: var(--badge-bg); color: #fff; }
     .preview .dest  { color: var(--orange); }
     .preview .mins  { color: var(--text); }
     .preview .mins.flash { color: var(--yellow); }
