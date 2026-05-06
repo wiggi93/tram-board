@@ -1,27 +1,27 @@
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 ARG WITH_LED=0
 
+# Pin to the last upstream commit before scikit-build-core / Pillow shim was
+# added (Feb 2026 refactor needs Pillow private headers).
+ARG RGBMATRIX_REF=02fb09a6099cd0aa1eb44b9b663cdc2af9b8cda3
+
 WORKDIR /build
 
-# Install build dependencies only in builder stage
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    git \
-    build-essential \
-    python3-dev && \
+    apt-get install -y --no-install-recommends git build-essential python3-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python build dependencies
 RUN pip install --no-cache-dir Cython
 
-# Conditionally build rpi-rgb-led-matrix
-RUN if [ "$WITH_LED" = "1" ]; then \
-      git clone https://github.com/hzeller/rpi-rgb-led-matrix.git /build/rpi-rgb-led-matrix && \
-      cd /build/rpi-rgb-led-matrix && \
-      git checkout v1.32 && \
+# Always materialise the output dir so the COPY in the runtime stage is
+# unconditional. Compile rgbmatrix into it only when WITH_LED=1.
+RUN mkdir -p /build/out && \
+    if [ "$WITH_LED" = "1" ]; then \
+      git clone https://github.com/hzeller/rpi-rgb-led-matrix.git /tmp/matrix && \
+      cd /tmp/matrix && git checkout "$RGBMATRIX_REF" && \
       make build-python PYTHON=$(which python3) && \
-      make install-python PYTHON=$(which python3); \
+      cp -r /tmp/matrix/bindings/python/. /build/out/; \
     fi
 
 # ============================================
@@ -29,38 +29,24 @@ RUN if [ "$WITH_LED" = "1" ]; then \
 # ============================================
 FROM python:3.11-slim
 
-ARG WITH_LED=0
-
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    TRAM_BOARD_CONFIG=/app/data/config.json
+    TRAM_BOARD_CONFIG=/app/data/config.json \
+    PYTHONPATH=/opt/rgbmatrix
 
 WORKDIR /app
 
-# Copy Python requirements and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application files
+COPY --from=builder /build/out /opt/rgbmatrix
+
 COPY app.py config.py tram.py led.py ./
 COPY templates ./templates
 COPY fonts ./fonts
 
-# Copy compiled rgbmatrix bindings if LED support was built
-ARG WITH_LED=0
-RUN mkdir -p /opt/rpi-rgb-led-matrix/bindings/python && \
-    cp -r /build/rpi-rgb-led-matrix/bindings/python/* /opt/rpi-rgb-led-matrix/bindings/python/ 2>/dev/null || true
-
-# Set PYTHONPATH for rgbmatrix if available
-RUN if [ "$WITH_LED" = "1" ]; then \
-      echo 'export PYTHONPATH="/opt/rpi-rgb-led-matrix/bindings/python:$PYTHONPATH"' >> /etc/profile.d/rgbmatrix.sh; \
-    fi
-
-# Create data directory for volumes
 RUN mkdir -p /app/data
-
 VOLUME ["/app/data"]
-
 EXPOSE 8080
 
 CMD ["python", "app.py", "--host", "0.0.0.0", "--port", "8080"]
