@@ -18,7 +18,8 @@ RUN if [ "$WITH_LED" = "1" ]; then \
       apt-get install -y --no-install-recommends git build-essential && \
       pip install --no-cache-dir Cython && \
       git clone --depth=1 https://github.com/hzeller/rpi-rgb-led-matrix /tmp/matrix && \
-      cd /tmp/matrix && \
+      cd /tmp/matrix && make -C lib && \
+      cd /tmp/matrix/bindings/python && \
       make build-python PYTHON=$(which python3) && \
       make install-python PYTHON=$(which python3) && \
       cd / && rm -rf /tmp/matrix && \
