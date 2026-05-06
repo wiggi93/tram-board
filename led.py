@@ -18,10 +18,13 @@ import tram
 
 log = logging.getLogger(__name__)
 
-FONT_PATH    = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts/4x6.bdf")
-LED_COLS     = 64
-LED_ROWS     = 32
-CHAR_WIDTH   = 4
+FONT_PATH      = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts/4x6.bdf")
+TEXT_FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts/7x14.bdf")
+LED_COLS       = 64
+LED_ROWS       = 32
+CHAR_WIDTH     = 4
+TEXT_CHAR_WIDTH = 7
+TEXT_SCROLL_PX_PER_SEC = 30   # readable scroll speed for text mode
 
 MAX_DEST_LEN = 9   # debug-frame default; actual visible chars derived from layout
 
@@ -65,12 +68,7 @@ def _build_matrix() -> RGBMatrix:
     return RGBMatrix(options=opts)
 
 
-def run(board: tram.BoardState) -> None:
-    matrix = _build_matrix()
-    canvas = matrix.CreateFrameCanvas()
-    font   = graphics.Font()
-    font.LoadFont(FONT_PATH)
-
+def _render_tram(canvas, font, board: tram.BoardState) -> None:
     dest_color  = graphics.Color(255, 127,  80)
     time_color  = graphics.Color(255, 255, 255)
     badge_bg    = graphics.Color(  0,  70, 200)
@@ -78,37 +76,64 @@ def run(board: tram.BoardState) -> None:
     clock_color = graphics.Color(180, 180, 180)
     line_height = 6
     badge_width = 6
-    dest_x      = badge_width + 1                       # 7
-    time_x      = LED_COLS - 2 * CHAR_WIDTH             # 56
-    visible     = (time_x - dest_x) // CHAR_WIDTH - 1   # 11
+    dest_x      = badge_width + 1
+    time_x      = LED_COLS - 2 * CHAR_WIDTH
+    visible     = (time_x - dest_x) // CHAR_WIDTH - 1
+
+    deps, changed_at = board.render_snapshot()
+    for i, dep in enumerate(deps):
+        if dep is None:
+            continue
+        y = line_height + i * line_height
+        for fy in range(y - line_height + 1, y + 1):
+            graphics.DrawLine(canvas, 0, fy, badge_width - 1, fy, badge_bg)
+        graphics.DrawText(canvas, font, 1, y, badge_text, dep.line[:2])
+
+        off  = _scroll_offset(i, len(dep.destination), visible)
+        text = f" {dep.destination[off:off + visible]:<{visible}}"
+        graphics.DrawText(canvas, font, dest_x, y, dest_color, text)
+
+        elapsed = time.time() - changed_at[i]
+        if elapsed < 1.5:
+            b = int(min(1.0, elapsed / 1.5) * 255)
+            row_color = graphics.Color(255, 255, b)
+        else:
+            row_color = time_color
+        graphics.DrawText(canvas, font, time_x, y, row_color, f"{dep.minutes:>2}")
+
+    now_str = datetime.now().strftime("%H:%M:%S")
+    clock_x = (LED_COLS - len(now_str) * CHAR_WIDTH) // 2
+    graphics.DrawText(canvas, font, clock_x, 31, clock_color, now_str)
+
+
+def _render_text(canvas, font_big, text: str, text_t0: float) -> None:
+    """Full-screen scrolling text. Text is repeated with a gap so it loops cleanly."""
+    if not text:
+        return
+    color = graphics.Color(255, 200, 80)
+    text_px   = len(text) * TEXT_CHAR_WIDTH
+    cycle_px  = text_px + LED_COLS                      # text + a full screen of trailing gap
+    elapsed   = time.time() - text_t0
+    offset_px = int(elapsed * TEXT_SCROLL_PX_PER_SEC) % cycle_px
+    x         = LED_COLS - offset_px
+    # vertical centre for a 14px-tall font on a 32px panel: baseline ~22
+    y         = 22
+    graphics.DrawText(canvas, font_big, x, y, color, text)
+
+
+def run(board: tram.BoardState) -> None:
+    matrix    = _build_matrix()
+    canvas    = matrix.CreateFrameCanvas()
+    font      = graphics.Font(); font.LoadFont(FONT_PATH)
+    font_big  = graphics.Font(); font_big.LoadFont(TEXT_FONT_PATH)
 
     while True:
         canvas.Clear()
-        deps, changed_at = board.render_snapshot()
-
-        for i, dep in enumerate(deps):
-            if dep is None:
-                continue
-            y = line_height + i * line_height
-            for fy in range(y - line_height + 1, y + 1):
-                graphics.DrawLine(canvas, 0, fy, badge_width - 1, fy, badge_bg)
-            graphics.DrawText(canvas, font, 1, y, badge_text, dep.line[:2])
-
-            off  = _scroll_offset(i, len(dep.destination), visible)
-            text = f" {dep.destination[off:off + visible]:<{visible}}"
-            graphics.DrawText(canvas, font, dest_x, y, dest_color, text)
-
-            elapsed = time.time() - changed_at[i]
-            if elapsed < 1.5:
-                b = int(min(1.0, elapsed / 1.5) * 255)
-                row_color = graphics.Color(255, 255, b)
-            else:
-                row_color = time_color
-            graphics.DrawText(canvas, font, time_x, y, row_color, f"{dep.minutes:>2}")
-
-        now_str = datetime.now().strftime("%H:%M:%S")
-        clock_x = (LED_COLS - len(now_str) * CHAR_WIDTH) // 2
-        graphics.DrawText(canvas, font, clock_x, 31, clock_color, now_str)
+        snap = board.snapshot()
+        if snap.get("mode") == "text":
+            _render_text(canvas, font_big, snap.get("text") or "", snap.get("text_changed_at") or 0.0)
+        else:
+            _render_tram(canvas, font, board)
 
         time.sleep(0.1)
         canvas = matrix.SwapOnVSync(canvas)

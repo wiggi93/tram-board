@@ -54,6 +54,9 @@ class BoardState:
         self._station_city: str = ""
         self._last_update: float = 0.0
         self._last_error:  Optional[str] = None
+        self._mode:        str = "tram"
+        self._text:        str = ""
+        self._text_changed_at: float = 0.0
 
     def update(self, new: list[Departure]) -> None:
         with self._lock:
@@ -75,6 +78,16 @@ class BoardState:
         with self._lock:
             self._last_error = msg
 
+    def set_mode(self, mode: str) -> None:
+        with self._lock:
+            self._mode = mode
+
+    def set_text(self, text: str) -> None:
+        with self._lock:
+            if text != self._text:
+                self._text_changed_at = time.time()
+            self._text = text
+
     def snapshot(self) -> dict:
         with self._lock:
             return {
@@ -84,6 +97,9 @@ class BoardState:
                 "station_city": self._station_city,
                 "last_update":  self._last_update,
                 "last_error":   self._last_error,
+                "mode":         self._mode,
+                "text":         self._text,
+                "text_changed_at": self._text_changed_at,
             }
 
     def render_snapshot(self) -> tuple[list[Optional[Departure]], list[float]]:

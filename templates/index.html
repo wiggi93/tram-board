@@ -13,6 +13,7 @@
       --muted:     #8a93a0;
       --orange:    #ff7f50;
       --yellow:    #ffff00;
+      --gold:      #ffc850;
       --badge-bg:  #0046c8;
     }
     * { box-sizing: border-box; }
@@ -21,7 +22,7 @@
       font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
       color: var(--text);
       background: var(--bg);
-      display: flex; flex-direction: column; align-items: center; gap: 2rem;
+      display: flex; flex-direction: column; align-items: center; gap: 1.5rem;
     }
     h1 { font-size: 1.4rem; margin: 0; font-weight: 600; }
     .card {
@@ -58,6 +59,25 @@
     .status.error { color: #ff6b6b; }
     .status.ok    { color: #6bcf7f; }
 
+    /* ── Tabs ─────────────────────────────────────────────────────────── */
+    .tabs {
+      display: flex; gap: 0.25rem; width: 100%; max-width: 540px;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 0.25rem;
+    }
+    .tab {
+      flex: 1;
+      padding: 0.5rem 0.8rem;
+      background: transparent;
+      color: var(--muted);
+      border: 0;
+      border-radius: 7px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .tab.active { background: var(--orange); color: #1a1a1a; }
+    .tab[aria-pressed="true"] { background: var(--orange); color: #1a1a1a; }
+
     /* ── Display preview ─────────────────────────────────────────────── */
     .preview {
       font-family: ui-monospace, "SF Mono", "Menlo", "DejaVu Sans Mono", monospace;
@@ -78,6 +98,7 @@
     .preview .mins.flash { color: var(--yellow); }
     .preview .clock { color: var(--muted); }
     .preview .border { color: #4a4f57; }
+    .preview .text-line { color: var(--gold); }
 
     .meta { font-size: 0.8rem; color: var(--muted); text-align: center; }
   </style>
@@ -85,13 +106,27 @@
 <body>
   <h1>Tram Board · Admin</h1>
 
-  <div class="card">
+  <div class="tabs" role="tablist">
+    <button class="tab" data-mode="tram" aria-pressed="true">Tram</button>
+    <button class="tab" data-mode="text" aria-pressed="false">Text</button>
+  </div>
+
+  <div class="card pane" data-pane="tram">
     <label for="q">Station (free text — try "<em>stop city</em>")</label>
     <div class="row">
       <input id="q" type="text" placeholder="Kerstingstraße Hannover" autocomplete="off" />
       <button id="apply">Apply</button>
     </div>
     <div id="status" class="status"></div>
+  </div>
+
+  <div class="card pane" data-pane="text" hidden>
+    <label for="text-input">Free text (replaces the tram board on the panel)</label>
+    <div class="row">
+      <input id="text-input" type="text" placeholder="Hello world!" autocomplete="off" />
+      <button id="text-apply">Apply</button>
+    </div>
+    <div id="text-status" class="status"></div>
   </div>
 
   <div class="card" style="padding: 1rem;">
@@ -102,12 +137,11 @@
   <script>
     const W = 22; // debug-frame interior width
 
-    function pad(s, n)       { s = String(s); return s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length); }
-    function padLeft(s, n)   { s = String(s); return s.length >= n ? s.slice(-n) : " ".repeat(n - s.length) + s; }
-    function center(s, n)    { const t = Math.max(0, n - s.length); const l = Math.floor(t/2); return " ".repeat(l) + s + " ".repeat(t - l); }
-    function escape(s)       { return s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+    function pad(s, n)     { s = String(s); return s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length); }
+    function padLeft(s, n) { s = String(s); return s.length >= n ? s.slice(-n) : " ".repeat(n - s.length) + s; }
+    function center(s, n)  { const t = Math.max(0, n - s.length); const l = Math.floor(t/2); return " ".repeat(l) + s + " ".repeat(t - l); }
+    function escape(s)     { return s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
 
-    let scrollT0 = Date.now() / 1000;
     function scrollOffset(row, len, visible) {
       const PAUSE = 3.5, SPEED = 0.38, HOLD = 2.0, STAGGER = 2.5;
       const max = Math.max(0, len - visible);
@@ -120,14 +154,12 @@
       return max;
     }
 
-    function renderFrame(state) {
+    function renderTramFrame(state) {
       const border = "─".repeat(W);
       const lines = [`<span class="border">┌${border}┐</span>`];
-
-      const deps      = state.departures || [];
+      const deps = state.departures || [];
       const changedAt = state.changed_at || [];
       const now = Date.now() / 1000;
-
       for (let i = 0; i < 4; i++) {
         const dep = deps[i];
         if (dep) {
@@ -146,18 +178,62 @@
           lines.push(`<span class="border">│</span>` + " ".repeat(W) + `<span class="border">│</span>`);
         }
       }
-
       const clock = new Date().toLocaleTimeString("de-DE", { hour12: false });
       lines.push(`<span class="border">│</span><span class="clock">${center(clock, W)}</span><span class="border">│</span>`);
       lines.push(`<span class="border">└${border}┘</span>`);
       return lines.join("\n");
     }
 
+    function renderTextFrame(state) {
+      const text  = state.text || "";
+      const t0    = state.text_changed_at || 0;
+      const speed = 6;          // chars per second — matches the LED's ~30 px/s
+      const cycle = text.length + W;
+      const offset = text.length === 0 ? 0
+                   : Math.floor((Date.now() / 1000 - t0) * speed) % cycle;
+      const padded = " ".repeat(W) + text + " ".repeat(W);
+      const window = padded.substring(offset, offset + W);
+
+      const border = "─".repeat(W);
+      const blank  = `<span class="border">│</span>${" ".repeat(W)}<span class="border">│</span>`;
+      return [
+        `<span class="border">┌${border}┐</span>`,
+        blank, blank,
+        `<span class="border">│</span><span class="text-line">${escape(window)}</span><span class="border">│</span>`,
+        blank, blank, blank,
+        `<span class="border">└${border}┘</span>`,
+      ].join("\n");
+    }
+
+    let currentMode = "tram";
+
+    function setMode(mode, fromServer) {
+      currentMode = mode;
+      document.querySelectorAll(".tab").forEach(b => {
+        const active = b.dataset.mode === mode;
+        b.classList.toggle("active", active);
+        b.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+      document.querySelectorAll(".pane").forEach(p => {
+        p.hidden = p.dataset.pane !== mode;
+      });
+      if (!fromServer) {
+        fetch("/api/mode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode }),
+        }).catch(() => {});
+      }
+    }
+
     async function refresh() {
       try {
         const res  = await fetch("/api/state");
         const data = await res.json();
-        document.getElementById("preview").innerHTML = renderFrame(data);
+
+        if (data.mode && data.mode !== currentMode) setMode(data.mode, true);
+        const frame = currentMode === "text" ? renderTextFrame(data) : renderTramFrame(data);
+        document.getElementById("preview").innerHTML = frame;
 
         const station = data.station_name
           ? `${data.station_name}${data.station_city ? ", " + data.station_city : ""}  ·  ${data.stop_id || ""}`
@@ -166,29 +242,32 @@
           ? `last update ${new Date(data.last_update * 1000).toLocaleTimeString("de-DE", { hour12: false })}`
           : "waiting for first fetch…";
         const err = data.last_error ? `  ·  error: ${data.last_error}` : "";
-        document.getElementById("meta").textContent = `${station}  ·  ${updated}${err}`;
+        document.getElementById("meta").textContent =
+          currentMode === "text" ? `text mode  ·  ${data.text ? `"${data.text}"` : "no text set"}`
+                                 : `${station}  ·  ${updated}${err}`;
 
         if (!document.activeElement || document.activeElement.id !== "q") {
           document.getElementById("q").placeholder = data.station_query || "Kerstingstraße Hannover";
+        }
+        if (!document.activeElement || document.activeElement.id !== "text-input") {
+          document.getElementById("text-input").placeholder = data.text || "Hello world!";
         }
       } catch (e) {
         document.getElementById("meta").textContent = `cannot reach server: ${e}`;
       }
     }
 
-    async function apply() {
-      const input  = document.getElementById("q");
+    async function applyStation() {
+      const input = document.getElementById("q");
       const status = document.getElementById("status");
       const button = document.getElementById("apply");
       const query  = input.value.trim();
       if (!query) { input.focus(); return; }
-
       button.disabled = true;
       status.className = "status";
       status.textContent = "resolving…";
-
       try {
-        const res  = await fetch("/api/station", {
+        const res = await fetch("/api/station", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query }),
@@ -211,11 +290,47 @@
       }
     }
 
-    document.getElementById("apply").addEventListener("click", apply);
-    document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") apply(); });
+    async function applyText() {
+      const input  = document.getElementById("text-input");
+      const status = document.getElementById("text-status");
+      const button = document.getElementById("text-apply");
+      const text   = input.value;
+      button.disabled = true;
+      status.className = "status";
+      status.textContent = "saving…";
+      try {
+        const res = await fetch("/api/text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          status.className = "status error";
+          status.textContent = data.error || `error ${res.status}`;
+        } else {
+          status.className = "status ok";
+          status.textContent = text ? `set: "${text}"` : "cleared";
+          refresh();
+        }
+      } catch (e) {
+        status.className = "status error";
+        status.textContent = String(e);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    document.querySelectorAll(".tab").forEach(b =>
+      b.addEventListener("click", () => setMode(b.dataset.mode))
+    );
+    document.getElementById("apply").addEventListener("click", applyStation);
+    document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") applyStation(); });
+    document.getElementById("text-apply").addEventListener("click", applyText);
+    document.getElementById("text-input").addEventListener("keydown", e => { if (e.key === "Enter") applyText(); });
 
     refresh();
-    setInterval(refresh, 500);
+    setInterval(refresh, 250);   // faster refresh so text scrolls smoothly
   </script>
 </body>
 </html>

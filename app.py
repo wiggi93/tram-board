@@ -47,6 +47,30 @@ def api_state():
     return jsonify(snap)
 
 
+@app.post("/api/mode")
+def api_set_mode():
+    payload = request.get_json(silent=True) or {}
+    mode = (payload.get("mode") or "").strip()
+    if mode not in ("tram", "text"):
+        return jsonify(error="mode must be 'tram' or 'text'"), 400
+    cfg = config.load()
+    cfg.mode = mode
+    config.save(cfg)
+    board.set_mode(mode)
+    return jsonify(mode=mode)
+
+
+@app.post("/api/text")
+def api_set_text():
+    payload = request.get_json(silent=True) or {}
+    text = payload.get("text") or ""
+    cfg = config.load()
+    cfg.text = text
+    config.save(cfg)
+    board.set_text(text)
+    return jsonify(text=text)
+
+
 @app.post("/api/station")
 def api_set_station():
     payload = request.get_json(silent=True) or {}
@@ -80,6 +104,8 @@ def _start_background_threads(enable_led: bool) -> None:
     cfg = config.load()
     if cfg.station_name:
         board.set_station(cfg.station_name, cfg.station_city)
+    board.set_mode(cfg.mode or "tram")
+    board.set_text(cfg.text or "")
 
     fetch_thread = threading.Thread(
         target=tram.fetch_loop,

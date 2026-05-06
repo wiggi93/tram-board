@@ -20,6 +20,8 @@ class Config:
     stop_id:       str = ""    # cached EFA stop id (resolved from station_query)
     station_name:  str = ""    # resolved display name
     station_city:  str = ""    # resolved parent city
+    mode:          str = "tram"   # "tram" or "text"
+    text:          str = ""        # free-text content for text mode
 
 
 _lock = threading.Lock()
