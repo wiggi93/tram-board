@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Pin to a known-good upstream commit. After Feb 2026 the project switched
 # to a scikit-build-core build that depends on Pillow's private Imaging.h
 # which isn't installed by Pillow wheels — pre-refactor it builds cleanly.
-ARG RGBMATRIX_REF=02fb09a6099cd0aa1eb44b9b663cdc2af9b8cda3
+ARG RGBMATRIX_REF=89072356305e272c2b1af32b8377a274df3d6d9f
 
 RUN if [ "$WITH_LED" = "1" ]; then \
       apt-get update && \
