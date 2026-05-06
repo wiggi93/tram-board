@@ -206,10 +206,14 @@
     }
 
     let currentMode = "tram";
-    let modeChangePending = false;
+    // Local user actions win over server state for this many ms. Covers any
+    // /api/state fetches already in flight when the user clicks a tab.
+    const LOCAL_OVERRIDE_MS = 1500;
+    let lastLocalModeChange = 0;
 
     async function setMode(mode, fromServer) {
       currentMode = mode;
+      if (!fromServer) lastLocalModeChange = Date.now();
       document.querySelectorAll(".tab").forEach(b => {
         const active = b.dataset.mode === mode;
         b.classList.toggle("active", active);
@@ -219,7 +223,6 @@
         p.hidden = p.dataset.pane !== mode;
       });
       if (!fromServer) {
-        modeChangePending = true;
         try {
           await fetch("/api/mode", {
             method: "POST",
@@ -227,7 +230,6 @@
             body: JSON.stringify({ mode }),
           });
         } catch (_) { /* ignore — refresh will recover */ }
-        finally { modeChangePending = false; }
       }
     }
 
@@ -236,7 +238,8 @@
         const res  = await fetch("/api/state");
         const data = await res.json();
 
-        if (!modeChangePending && data.mode && data.mode !== currentMode) setMode(data.mode, true);
+        const ignoreServerMode = (Date.now() - lastLocalModeChange) < LOCAL_OVERRIDE_MS;
+        if (!ignoreServerMode && data.mode && data.mode !== currentMode) setMode(data.mode, true);
         const frame = currentMode === "text" ? renderTextFrame(data) : renderTramFrame(data);
         document.getElementById("preview").innerHTML = frame;
 
