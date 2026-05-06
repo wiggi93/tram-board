@@ -4,7 +4,7 @@ ARG WITH_LED=0
 
 # Pin to the last upstream commit before scikit-build-core / Pillow shim was
 # added (Feb 2026 refactor needs Pillow private headers).
-ARG RGBMATRIX_REF=02fb09a6099cd0aa1eb44b9b663cdc2af9b8cda3
+ARG RGBMATRIX_REF=02fb09a6099c84b7bc76cdfa231338d8ca81ed6d
 
 WORKDIR /build
 
