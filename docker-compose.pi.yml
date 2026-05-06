@@ -1,0 +1,37 @@
+# Raspberry Pi compose file — runs the web admin AND drives an RGB LED matrix
+# panel from the same container. Requires privileged mode for direct GPIO/PWM
+# access via the rpi-rgb-led-matrix C library.
+#
+# Hardware: Pi 4/5 with HUB75 panel attached (defaults: 64×32, regular GPIO
+# wiring). Tweak the LED_* env vars for other panel sizes or adapter HATs.
+#
+# Usage on the Pi:
+#   mkdir -p ~/tram-board/data && cd ~/tram-board
+#   curl -O https://raw.githubusercontent.com/wiggi93/tram-board/main/docker-compose.pi.yml
+#   docker compose -f docker-compose.pi.yml up -d
+#
+# Update later:
+#   docker compose -f docker-compose.pi.yml pull && docker compose -f docker-compose.pi.yml up -d
+
+services:
+  tram-board:
+    image: ${IMAGE:-profdrdisco/tram-board:led}
+    container_name: tram-board
+    privileged: true                  # needed for /dev/mem direct PWM access
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PORT=8080
+      # ── LED panel options (override per your hardware) ───────────────────
+      - LED_ROWS=32
+      - LED_COLS=64
+      - LED_CHAIN=1                   # daisy-chained panels
+      - LED_PARALLEL=1                # parallel chains
+      - LED_BRIGHTNESS=70             # 1–100
+      - LED_PWM_BITS=11               # 1–11
+      - LED_SLOWDOWN_GPIO=2           # 0–4 (raise on faster Pis)
+      # - LED_GPIO_MAPPING=adafruit-hat   # uncomment if you use an Adafruit HAT
+    command: ["python", "app.py", "--host", "0.0.0.0", "--port", "8080", "--led"]
+    restart: unless-stopped

@@ -10,7 +10,7 @@
 
 services:
   tram-board:
-    image: ${IMAGE:-wiggi93/tram-board:latest}
+    image: ${IMAGE:-profdrdisco/tram-board:latest}
     container_name: tram-board
     ports:
       - "8080:8080"
