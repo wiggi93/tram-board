@@ -47,13 +47,16 @@ def _scroll_offset(row: int, dest_len: int, visible: int) -> int:
 
 def _build_matrix() -> RGBMatrix:
     opts = RGBMatrixOptions()
-    opts.rows          = LED_ROWS
-    opts.cols          = LED_COLS
-    opts.chain_length  = 1
-    opts.parallel      = 1
+    opts.rows          = int(os.environ.get("LED_ROWS", LED_ROWS))
+    opts.cols          = int(os.environ.get("LED_COLS", LED_COLS))
+    opts.chain_length  = int(os.environ.get("LED_CHAIN", "1"))
+    opts.parallel      = int(os.environ.get("LED_PARALLEL", "1"))
     opts.gpio_slowdown = int(os.environ.get("LED_SLOWDOWN_GPIO", "2"))
     opts.pwm_bits      = int(os.environ.get("LED_PWM_BITS", "11"))
     opts.brightness    = int(os.environ.get("LED_BRIGHTNESS", "70"))
+    mapping = os.environ.get("LED_GPIO_MAPPING")
+    if mapping:
+        opts.hardware_mapping = mapping            # e.g. "regular", "adafruit-hat", "adafruit-hat-pwm"
     return RGBMatrix(options=opts)
 
 

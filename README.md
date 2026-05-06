@@ -103,15 +103,38 @@ That's it — no rebuild on the Pi, no source code on the Pi.
 
 ## LED hardware mode
 
-On a Raspberry Pi with [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix) installed:
+There are **two pre-built images**, both published by the GHA pipeline on every push to `main`:
+
+| Tag | Architectures | Contents |
+|---|---|---|
+| `profdrdisco/tram-board:latest` | `amd64`, `arm64`, `arm/v7` | Web admin only — runs anywhere |
+| `profdrdisco/tram-board:led` | `arm64`, `arm/v7` | Web admin **+** the `rpi-rgb-led-matrix` C library compiled in — Pi only |
+
+### Running the LED variant on the Pi
 
 ```bash
-sudo python app.py --led
+mkdir -p ~/tram-board/data && cd ~/tram-board
+curl -O https://raw.githubusercontent.com/wiggi93/tram-board/main/docker-compose.pi.yml
+docker compose -f docker-compose.pi.yml up -d
 ```
 
-The LED renderer runs in a background thread and reads the same `BoardState` the web UI does, so changing the station from a phone instantly updates the panel.
+That's the entire setup — no source on the Pi, no Python install, nothing on the host except Docker. The same web admin works at `http://<pi>:8080` and the LED panel updates as you change stations.
 
-> Hardware mode in Docker requires `--privileged` and host GPIO access. The image works as-is for the web service; running the LED inside a container is left as an exercise.
+`docker-compose.pi.yml` runs the container with `privileged: true` (for `/dev/mem` direct PWM access) and exposes env vars for the common panel options:
+
+```
+LED_ROWS=32  LED_COLS=64  LED_CHAIN=1  LED_PARALLEL=1
+LED_BRIGHTNESS=70  LED_PWM_BITS=11  LED_SLOWDOWN_GPIO=2
+LED_GPIO_MAPPING=adafruit-hat        # only if you use a HAT
+```
+
+### Running locally (no LED, no Pi)
+
+```bash
+sudo python app.py --led    # only works if you've installed rpi-rgb-led-matrix on the host
+# or, just the web service:
+python app.py
+```
 
 ---
 
