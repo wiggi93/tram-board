@@ -29,6 +29,8 @@ RUN if [ "$WITH_LED" = "1" ]; then \
 # ============================================
 FROM python:3.11-slim
 
+ARG WITH_LED=0
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     TRAM_BOARD_CONFIG=/app/data/config.json
@@ -46,7 +48,8 @@ COPY fonts ./fonts
 
 # Copy compiled rgbmatrix bindings if LED support was built
 ARG WITH_LED=0
-COPY --from=builder --chown=root:root /build/rpi-rgb-led-matrix/bindings/python /opt/rpi-rgb-led-matrix/bindings/python 2>/dev/null || true
+RUN mkdir -p /opt/rpi-rgb-led-matrix/bindings/python && \
+    cp -r /build/rpi-rgb-led-matrix/bindings/python/* /opt/rpi-rgb-led-matrix/bindings/python/ 2>/dev/null || true
 
 # Set PYTHONPATH for rgbmatrix if available
 RUN if [ "$WITH_LED" = "1" ]; then \
