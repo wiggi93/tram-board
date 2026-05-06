@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Tram Board · Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg:        #0d0f12;
+      --panel:     #161a20;
+      --border:    #2a2f37;
+      --text:      #e8eaed;
+      --muted:     #8a93a0;
+      --orange:    #ff7f50;
+      --yellow:    #ffff00;
+      --badge-bg:  #0046c8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 2rem;
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      display: flex; flex-direction: column; align-items: center; gap: 2rem;
+    }
+    h1 { font-size: 1.4rem; margin: 0; font-weight: 600; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      width: 100%;
+      max-width: 540px;
+    }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.4rem; }
+    .row { display: flex; gap: 0.5rem; }
+    input[type=text] {
+      flex: 1;
+      padding: 0.55rem 0.7rem;
+      background: #0a0c10;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+    input[type=text]:focus { outline: none; border-color: var(--orange); }
+    button {
+      padding: 0.55rem 1rem;
+      background: var(--orange);
+      color: #1a1a1a;
+      border: 0;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status { margin-top: 0.7rem; font-size: 0.85rem; color: var(--muted); min-height: 1.2em; }
+    .status.error { color: #ff6b6b; }
+    .status.ok    { color: #6bcf7f; }
+
+    /* ── Display preview ─────────────────────────────────────────────── */
+    .preview {
+      font-family: ui-monospace, "SF Mono", "Menlo", "DejaVu Sans Mono", monospace;
+      font-size: 18px;
+      line-height: 1.35;
+      color: var(--text);
+      background: #000;
+      padding: 1rem 1.25rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      white-space: pre;
+      letter-spacing: 0.5px;
+    }
+    .preview .badge { background: var(--badge-bg); color: #fff; padding: 0 2px; border-radius: 2px; }
+    .preview .dest  { color: var(--orange); }
+    .preview .mins  { color: var(--text); }
+    .preview .mins.flash { color: var(--yellow); }
+    .preview .clock { color: var(--muted); }
+    .preview .border { color: #4a4f57; }
+
+    .meta { font-size: 0.8rem; color: var(--muted); text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>Tram Board · Admin</h1>
+
+  <div class="card">
+    <label for="q">Station (free text — try "<em>stop city</em>")</label>
+    <div class="row">
+      <input id="q" type="text" placeholder="Kerstingstraße Hannover" autocomplete="off" />
+      <button id="apply">Apply</button>
+    </div>
+    <div id="status" class="status"></div>
+  </div>
+
+  <div class="card" style="padding: 1rem;">
+    <div id="preview" class="preview">loading…</div>
+    <div id="meta" class="meta" style="margin-top: 0.5rem;"></div>
+  </div>
+
+  <script>
+    const W = 22; // debug-frame interior width
+
+    function pad(s, n)       { s = String(s); return s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length); }
+    function padLeft(s, n)   { s = String(s); return s.length >= n ? s.slice(-n) : " ".repeat(n - s.length) + s; }
+    function center(s, n)    { const t = Math.max(0, n - s.length); const l = Math.floor(t/2); return " ".repeat(l) + s + " ".repeat(t - l); }
+    function escape(s)       { return s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+    let scrollT0 = Date.now() / 1000;
+    function scrollOffset(row, len, visible) {
+      const PAUSE = 3.5, SPEED = 0.38, HOLD = 2.0, STAGGER = 2.5;
+      const max = Math.max(0, len - visible);
+      if (max === 0) return 0;
+      const dur = max * SPEED;
+      const cycle = PAUSE + dur + HOLD;
+      const t = ((Date.now() / 1000 - row * STAGGER) % cycle + cycle) % cycle;
+      if (t < PAUSE) return 0;
+      if (t < PAUSE + dur) return Math.floor((t - PAUSE) / SPEED);
+      return max;
+    }
+
+    function renderFrame(state) {
+      const border = "─".repeat(W);
+      const lines = [`<span class="border">┌${border}┐</span>`];
+
+      const deps      = state.departures || [];
+      const changedAt = state.changed_at || [];
+      const now = Date.now() / 1000;
+
+      for (let i = 0; i < 4; i++) {
+        const dep = deps[i];
+        if (dep) {
+          const off  = scrollOffset(i, dep.destination.length, 9);
+          const dest = pad(" " + pad(dep.destination.slice(off, off + 9), 9), 10);
+          const mins = padLeft(String(dep.minutes), W - 12);
+          const flash = (now - (changedAt[i] || 0)) < 1.5 ? " flash" : "";
+          lines.push(
+            `<span class="border">│</span>` +
+            `<span class="badge">${escape(pad(dep.line.slice(0,2), 2))}</span>` +
+            `<span class="dest">${escape(dest)}</span>` +
+            `<span class="mins${flash}">${escape(mins)}</span>` +
+            `<span class="border">│</span>`
+          );
+        } else {
+          lines.push(`<span class="border">│</span>` + " ".repeat(W) + `<span class="border">│</span>`);
+        }
+      }
+
+      const clock = new Date().toLocaleTimeString("de-DE", { hour12: false });
+      lines.push(`<span class="border">│</span><span class="clock">${center(clock, W)}</span><span class="border">│</span>`);
+      lines.push(`<span class="border">└${border}┘</span>`);
+      return lines.join("\n");
+    }
+
+    async function refresh() {
+      try {
+        const res  = await fetch("/api/state");
+        const data = await res.json();
+        document.getElementById("preview").innerHTML = renderFrame(data);
+
+        const station = data.station_name
+          ? `${data.station_name}${data.station_city ? ", " + data.station_city : ""}  ·  ${data.stop_id || ""}`
+          : "no station configured";
+        const updated = data.last_update
+          ? `last update ${new Date(data.last_update * 1000).toLocaleTimeString("de-DE", { hour12: false })}`
+          : "waiting for first fetch…";
+        const err = data.last_error ? `  ·  error: ${data.last_error}` : "";
+        document.getElementById("meta").textContent = `${station}  ·  ${updated}${err}`;
+
+        if (!document.activeElement || document.activeElement.id !== "q") {
+          document.getElementById("q").placeholder = data.station_query || "Kerstingstraße Hannover";
+        }
+      } catch (e) {
+        document.getElementById("meta").textContent = `cannot reach server: ${e}`;
+      }
+    }
+
+    async function apply() {
+      const input  = document.getElementById("q");
+      const status = document.getElementById("status");
+      const button = document.getElementById("apply");
+      const query  = input.value.trim();
+      if (!query) { input.focus(); return; }
+
+      button.disabled = true;
+      status.className = "status";
+      status.textContent = "resolving…";
+
+      try {
+        const res  = await fetch("/api/station", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          status.className = "status error";
+          status.textContent = data.error || `error ${res.status}`;
+        } else {
+          status.className = "status ok";
+          status.textContent = `→ ${data.station_name}, ${data.station_city} (${data.stop_id})`;
+          input.value = "";
+          refresh();
+        }
+      } catch (e) {
+        status.className = "status error";
+        status.textContent = String(e);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    document.getElementById("apply").addEventListener("click", apply);
+    document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") apply(); });
+
+    refresh();
+    setInterval(refresh, 500);
+  </script>
+</body>
+</html>

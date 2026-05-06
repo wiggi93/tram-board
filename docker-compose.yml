@@ -1,0 +1,12 @@
+services:
+  tram-board:
+    build: .
+    image: tram-board:latest
+    container_name: tram-board
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PORT=8080
+    restart: unless-stopped
