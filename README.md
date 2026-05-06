@@ -64,6 +64,15 @@ docker buildx build \
 
 Pi 4 / 5 on 64-bit Raspberry Pi OS uses `arm64`. Pi 3 or any 32-bit OS uses `arm/v7`. Including `amd64` lets you also run the same image on your Mac/Linux box without rebuilding.
 
+### Or: let GitHub Actions do it on every push to `main`
+
+[`.github/workflows/docker.yml`](.github/workflows/docker.yml) builds the multi-arch image and pushes to Docker Hub automatically on every commit to `main`. Each build is tagged both `latest` and `sha-<short>` for rollbacks. To enable, add two repository secrets at **Settings → Secrets and variables → Actions**:
+
+- `DOCKERHUB_USERNAME` — your Docker Hub username
+- `DOCKERHUB_TOKEN` — an access token from [Docker Hub → Account Settings → Personal Access Tokens](https://app.docker.com/settings/personal-access-tokens) (scope: *Read, Write, Delete*)
+
+After that, every push to `main` triggers a build; updating the Pi is just `docker compose -f docker-compose.deploy.yml pull && ... up -d`.
+
 ### One-time on the Pi
 
 ```bash
