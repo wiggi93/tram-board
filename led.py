@@ -57,6 +57,11 @@ def _build_matrix() -> RGBMatrix:
     mapping = os.environ.get("LED_GPIO_MAPPING")
     if mapping:
         opts.hardware_mapping = mapping            # e.g. "regular", "adafruit-hat", "adafruit-hat-pwm"
+    if os.environ.get("LED_NO_HARDWARE_PULSE", "").lower() in ("1", "true", "yes", "on"):
+        # Use software PWM. Avoids conflict with the Pi's snd_bcm2835 sound
+        # module without requiring the user to disable audio on the host.
+        # Trade-off: slight flicker compared to hardware PWM.
+        opts.disable_hardware_pulsing = True
     return RGBMatrix(options=opts)
 
 

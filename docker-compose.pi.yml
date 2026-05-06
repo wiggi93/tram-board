@@ -32,6 +32,9 @@ services:
       - LED_BRIGHTNESS=70             # 1–100
       - LED_PWM_BITS=11               # 1–11
       - LED_SLOWDOWN_GPIO=2           # 0–4 (raise on faster Pis)
+      - LED_NO_HARDWARE_PULSE=1       # software PWM — avoids conflict with snd_bcm2835.
+                                       # Set to 0 (and disable Pi audio in /boot/firmware/config.txt)
+                                       # for sharper display with no flicker.
       # - LED_GPIO_MAPPING=adafruit-hat   # uncomment if you use an Adafruit HAT
     command: ["python", "app.py", "--host", "0.0.0.0", "--port", "8080", "--led"]
     restart: unless-stopped
