@@ -113,10 +113,12 @@ There are **two pre-built images**, both published by the GHA pipeline on every 
 ### Running the LED variant on the Pi
 
 ```bash
-mkdir -p ~/tram-board/data && cd ~/tram-board
-curl -O https://raw.githubusercontent.com/wiggi93/tram-board/main/docker-compose.pi.yml
+mkdir -p ~/tram-board/data && chmod 777 ~/tram-board/data && cd ~/tram-board
+curl -O https://raw.githubusercontent.com/wiggi93/tram-board/master/docker-compose.pi.yml
 docker compose -f docker-compose.pi.yml up -d
 ```
+
+The `chmod 777 ~/tram-board/data` is needed because the bind-mounted directory must be writable by the container's effective uid. Different Docker installs (rootful, rootless, userns-remapped) end up with different uids inside the container; world-writable is the simplest portable answer for a single-user appliance.
 
 That's the entire setup — no source on the Pi, no Python install, nothing on the host except Docker. The same web admin works at `http://<pi>:8080` and the LED panel updates as you change stations.
 

@@ -6,9 +6,14 @@
 # wiring). Tweak the LED_* env vars for other panel sizes or adapter HATs.
 #
 # Usage on the Pi:
-#   mkdir -p ~/tram-board/data && cd ~/tram-board
-#   curl -O https://raw.githubusercontent.com/wiggi93/tram-board/main/docker-compose.pi.yml
+#   mkdir -p ~/tram-board/data && chmod 777 ~/tram-board/data && cd ~/tram-board
+#   curl -O https://raw.githubusercontent.com/wiggi93/tram-board/master/docker-compose.pi.yml
 #   docker compose -f docker-compose.pi.yml up -d
+#
+# The chmod is needed because the bind-mounted ./data directory must be
+# writable by the container's effective uid (depends on your Docker install:
+# rootful daemons run as root in-container; rootless or userns-remapped
+# daemons run as some other uid). 777 is the simplest portable answer.
 #
 # Update later:
 #   docker compose -f docker-compose.pi.yml pull && docker compose -f docker-compose.pi.yml up -d
