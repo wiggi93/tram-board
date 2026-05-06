@@ -9,10 +9,8 @@ ARG RGBMATRIX_REF=02fb09a6099c84b7bc76cdfa231338d8ca81ed6d
 WORKDIR /build
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git build-essential python3-dev && \
+    apt-get install -y --no-install-recommends git build-essential python3-dev cython3 && \
     rm -rf /var/lib/apt/lists/*
-
-RUN pip install --no-cache-dir Cython
 
 # Always materialise the output dir so the COPY in the runtime stage is
 # unconditional. Compile rgbmatrix into it only when WITH_LED=1.
