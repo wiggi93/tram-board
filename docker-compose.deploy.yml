@@ -1,0 +1,21 @@
+# Production compose file for Raspberry Pi (or any Docker host).
+# Pulls a pre-built image from Docker Hub instead of building locally.
+#
+# Usage on the Pi:
+#   mkdir -p ~/tram-board/data && cd ~/tram-board
+#   curl -O https://raw.githubusercontent.com/<you>/tram-board/main/docker-compose.deploy.yml
+#   IMAGE=<your-dockerhub-user>/tram-board:latest docker compose -f docker-compose.deploy.yml up -d
+#
+# To update later:  docker compose -f docker-compose.deploy.yml pull && docker compose -f docker-compose.deploy.yml up -d
+
+services:
+  tram-board:
+    image: ${IMAGE:-wiggi93/tram-board:latest}
+    container_name: tram-board
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PORT=8080
+    restart: unless-stopped

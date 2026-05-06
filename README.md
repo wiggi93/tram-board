@@ -42,6 +42,56 @@ python app.py
 
 The preview polls `/api/state` every 500 ms and renders the same 22-column frame the LED uses, with the same colours (blue badge, orange destination, white time, yellow flash on change).
 
+## Deploy to a Raspberry Pi (or any Docker host)
+
+The clean path is: **build a multi-arch image on your Mac → push to Docker Hub → `docker compose pull` on the Pi**.
+
+### One-time on your Mac
+
+```bash
+docker login
+docker buildx create --use --name tram-builder    # one-time
+```
+
+### Build & push (run from the project root)
+
+```bash
+docker buildx build \
+  --platform linux/amd64,linux/arm64,linux/arm/v7 \
+  -t <your-dockerhub-user>/tram-board:latest \
+  --push .
+```
+
+Pi 4 / 5 on 64-bit Raspberry Pi OS uses `arm64`. Pi 3 or any 32-bit OS uses `arm/v7`. Including `amd64` lets you also run the same image on your Mac/Linux box without rebuilding.
+
+### One-time on the Pi
+
+```bash
+ssh pi@raspberrypi.local
+sudo apt-get install -y docker.io docker-compose-plugin   # if not already
+sudo usermod -aG docker $USER && newgrp docker            # so you don't need sudo
+
+mkdir -p ~/tram-board/data && cd ~/tram-board
+curl -O https://raw.githubusercontent.com/<you>/tram-board/main/docker-compose.deploy.yml
+
+# first start
+IMAGE=<your-dockerhub-user>/tram-board:latest \
+  docker compose -f docker-compose.deploy.yml up -d
+```
+
+The container restarts on reboot (`restart: unless-stopped`) and persists configuration to `~/tram-board/data/config.json` on the host. Open `http://raspberrypi.local:8080` from any browser on the LAN to set the station.
+
+### Updating later
+
+```bash
+docker compose -f docker-compose.deploy.yml pull
+docker compose -f docker-compose.deploy.yml up -d
+```
+
+That's it — no rebuild on the Pi, no source code on the Pi.
+
+---
+
 ## LED hardware mode
 
 On a Raspberry Pi with [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix) installed:
