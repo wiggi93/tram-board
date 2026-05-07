@@ -18,6 +18,7 @@ from flask import Flask, jsonify, render_template, request
 
 import config
 import tram
+import weather
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("tram-board")
@@ -45,6 +46,14 @@ def api_state():
     snap["station_city"]  = cfg.station_city or snap["station_city"]
     snap["stop_id"]       = cfg.stop_id
     return jsonify(snap)
+
+
+@app.get("/api/weather")
+def api_weather():
+    cfg = config.load()
+    query = " ".join(p for p in (cfg.station_city, cfg.station_name) if p) or cfg.station_query
+    summary = weather.fetch_summary(query)
+    return jsonify(summary)
 
 
 @app.post("/api/mode")
