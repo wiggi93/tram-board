@@ -107,8 +107,16 @@ def api_set_station():
     )
     config.save(cfg)
     board.set_station(resolved.name, resolved.city)
-    # Clear current departures so the UI shows the change immediately.
-    board.update([])
+    # Pull a fresh schedule synchronously so the panel reflects the new station
+    # immediately instead of waiting up to FETCH_INTERVAL for the next tick.
+    try:
+        events     = tram.fetch_stop_events(resolved.id)
+        departures = tram.parse_departures(events)
+        departures = tram.trim_for_display(departures, city=resolved.city)
+        board.update(departures)
+    except Exception as e:
+        log.warning("Initial fetch after station change failed: %s", e)
+        board.update([])
     return jsonify(
         stop_id=resolved.id,
         station_name=resolved.name,

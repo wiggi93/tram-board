@@ -122,14 +122,14 @@
     }
     .wrow {
       display: grid;
-      grid-template-columns: 18px 4.2ch 3.5ch 3.5ch;
+      grid-template-columns: 5.2ch 3.5ch 18px 4ch;
       align-items: center;
-      gap: 0.5ch;
+      gap: 0.6ch;
     }
-    .wicon { width: 18px; height: 18px; image-rendering: pixelated; }
-    .wlabel  { color: var(--gold); font-weight: 600; }
-    .wtemp   { color: var(--text); text-align: right; }
-    .wprecip { color: #8ec3ff;     text-align: right; }
+    .wicon  { width: 18px; height: 18px; image-rendering: pixelated; justify-self: center; }
+    .wtime  { color: var(--gold); font-weight: 600; }
+    .wtemp  { color: var(--text); text-align: right; }
+    .whumid { color: #8ec3ff;     text-align: right; }
     .weather-empty { color: var(--muted); padding: 1rem 0.2rem; }
   </style>
 </head>
@@ -282,13 +282,14 @@
         : "";
       head.textContent = [place && `Today · ${place}`, updated].filter(Boolean).join("  ·  ");
       body.innerHTML = periods.slice(0, 5).map(p => {
-        const label  = (p.label || "").slice(0, 4);
-        const temp   = (p.temp_hi != null) ? `${String(Math.round(p.temp_hi)).padStart(2)}°` : " --";
-        const precip = (p.precip != null && p.precip >= 30) ? `${Math.round(p.precip)}%` : "";
-        return `<div class="wrow">${iconSVG(p.icon || "cloud")}` +
-               `<span class="wlabel">${escape(label)}</span>` +
+        const time  = p.time || "";
+        const temp  = (p.temp_hi  != null) ? `${String(Math.round(p.temp_hi)).padStart(2)}°` : " --";
+        const humid = (p.humidity != null) ? `${Math.round(p.humidity)}%`                   : "";
+        return `<div class="wrow">` +
+               `<span class="wtime">${escape(time)}</span>` +
                `<span class="wtemp">${escape(temp)}</span>` +
-               `<span class="wprecip">${escape(precip)}</span>` +
+               `${iconSVG(p.icon || "cloud")}` +
+               `<span class="whumid">${escape(humid)}</span>` +
                `</div>`;
       }).join("");
     }

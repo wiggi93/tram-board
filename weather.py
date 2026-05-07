@@ -133,36 +133,42 @@ def _classify(code: int) -> str:
 def _summarise(period_label: str, hours: list[dict]) -> dict:
     if not hours:
         return {
-            "label":   period_label,
-            "icon":    "cloud",
-            "temp_lo": None,
-            "temp_hi": None,
-            "precip":  0,
-            "summary": "no data",
+            "label":    period_label,
+            "icon":     "cloud",
+            "temp_lo":  None,
+            "temp_hi":  None,
+            "precip":   0,
+            "humidity": None,
+            "summary":  "no data",
         }
     temps  = [h["temperature"] for h in hours if h["temperature"] is not None]
     codes  = [h["code"]        for h in hours if h["code"]        is not None]
     precs  = [h["precip"]      for h in hours if h["precip"]      is not None]
+    hums   = [h["humidity"]    for h in hours if h["humidity"]    is not None]
     dominant = Counter(codes).most_common(1)[0][0] if codes else None
     icon     = _classify(dominant) if dominant is not None else "cloud"
     lo = round(min(temps)) if temps else None
     hi = round(max(temps)) if temps else None
-    precip = int(round(max(precs))) if precs else 0
+    precip   = int(round(max(precs)))            if precs else 0
+    humidity = int(round(sum(hums) / len(hums))) if hums  else None
 
     parts: list[str] = []
     if dominant is not None:
         parts.append(WEATHER_CODE.get(dominant, f"code {dominant}"))
     if lo is not None and hi is not None:
         parts.append(f"{lo}°C" if lo == hi else f"{lo}–{hi}°C")
+    if humidity is not None:
+        parts.append(f"humidity {humidity}%")
     if precip >= 20:
         parts.append(f"rain {precip}%")
     return {
-        "label":   period_label,
-        "icon":    icon,
-        "temp_lo": lo,
-        "temp_hi": hi,
-        "precip":  precip,
-        "summary": ", ".join(parts) or "—",
+        "label":    period_label,
+        "icon":     icon,
+        "temp_lo":  lo,
+        "temp_hi":  hi,
+        "precip":   precip,
+        "humidity": humidity,
+        "summary":  ", ".join(parts) or "—",
     }
 
 
@@ -175,6 +181,7 @@ def _bucket_hours(hourly: dict, today: str, tomorrow: str) -> list[dict]:
     temps  = hourly.get("temperature_2m") or []
     codes  = hourly.get("weathercode")    or hourly.get("weather_code") or []
     precs  = hourly.get("precipitation_probability") or []
+    hums   = hourly.get("relative_humidity_2m")      or []
     out: list[dict] = []
     for i, t in enumerate(times):
         date_part, _, hour_part = t.partition("T")
@@ -193,6 +200,7 @@ def _bucket_hours(hourly: dict, today: str, tomorrow: str) -> list[dict]:
             "temperature": temps[i] if i < len(temps) else None,
             "code":        codes[i] if i < len(codes) else None,
             "precip":      precs[i] if i < len(precs) else None,
+            "humidity":    hums[i]  if i < len(hums)  else None,
         })
     return out
 
@@ -221,7 +229,7 @@ def fetch_summary(query: str) -> dict:
             params={
                 "latitude":  lat,
                 "longitude": lon,
-                "hourly":    "temperature_2m,weathercode,precipitation_probability",
+                "hourly":    "temperature_2m,weathercode,precipitation_probability,relative_humidity_2m",
                 "timezone":  "auto",
                 "forecast_days": 2,
             },
@@ -242,7 +250,12 @@ def fetch_summary(query: str) -> dict:
     periods = []
     for label, start, end in PERIODS:
         bucket = [h for h in hours if start <= h["offset"] < end]
-        periods.append(_summarise(label, bucket))
+        period = _summarise(label, bucket)
+        # Display the period as a clock time rather than its name. Night
+        # straddles midnight (start=22, end=30) — show 22:00 either way.
+        period["start_hour"] = start % 24
+        period["time"]       = f"{start % 24:02d}:00"
+        periods.append(period)
 
     summary = {
         "place":   place,

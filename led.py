@@ -212,26 +212,35 @@ def _render_weather(canvas, font, snap: dict) -> None:
     periods = weather.get("periods") or []
     err     = weather.get("error")
     text_color  = graphics.Color(255, 255, 255)
-    label_color = graphics.Color(255, 200, 80)
+    time_color  = graphics.Color(255, 200, 80)
+    humid_color = graphics.Color(140, 195, 255)
 
     if not periods:
         msg = (err or "loading weather…")[:15]
         graphics.DrawText(canvas, font, 1, 18, text_color, msg)
         return
 
+    # Column layout (px) within a 64-wide panel:
+    #   time "HH:00" at x=0..19, temp "XX°" at x=21..32, icon 6×6 at x=34..39,
+    #   humidity "NN%"/"100%" at x=41..56. Total 57px used, 7px headroom.
+    TIME_X, TEMP_X, ICON_X, HUMID_X = 0, 21, 34, 41
+
     for i, p in enumerate(periods[:5]):
         y_icon = 1 + i * 6
         y_text = y_icon + 5
-        _draw_weather_icon(canvas, p.get("icon", "cloud"), 0, y_icon)
-        label = (p.get("label") or "")[:4]
-        graphics.DrawText(canvas, font, 7, y_text, label_color, f"{label:<4}")
-        temp_hi = p.get("temp_hi")
+
+        time_str = p.get("time") or ""
+        graphics.DrawText(canvas, font, TIME_X, y_text, time_color, time_str)
+
+        temp_hi  = p.get("temp_hi")
         temp_str = f"{temp_hi:>2}°" if isinstance(temp_hi, (int, float)) else " --"
-        graphics.DrawText(canvas, font, 7 + 5 * CHAR_WIDTH, y_text, text_color, temp_str)
-        precip = p.get("precip") or 0
-        if precip >= 30:
-            precip_x = 7 + (5 + 3 + 1) * CHAR_WIDTH   # after label(5) + temp(3) + gap(1)
-            graphics.DrawText(canvas, font, precip_x, y_text, text_color, f"{int(precip)}%")
+        graphics.DrawText(canvas, font, TEMP_X, y_text, text_color, temp_str)
+
+        _draw_weather_icon(canvas, p.get("icon", "cloud"), ICON_X, y_icon)
+
+        humidity = p.get("humidity")
+        if isinstance(humidity, (int, float)):
+            graphics.DrawText(canvas, font, HUMID_X, y_text, humid_color, f"{int(round(humidity))}%")
 
 
 def _render_text(canvas, font_big, text: str, text_t0: float) -> None:
