@@ -40,7 +40,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY --from=builder /build/out /opt/rgbmatrix
 
-COPY app.py config.py tram.py led.py ./
+COPY app.py config.py tram.py led.py weather.py ./
 COPY templates ./templates
 COPY fonts ./fonts
 
