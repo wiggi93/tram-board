@@ -101,23 +101,46 @@
     .preview .text-line { color: var(--gold); }
 
     .meta { font-size: 0.8rem; color: var(--muted); text-align: center; }
+
+    /* ── Weather ─────────────────────────────────────────────────────── */
+    .weather-head {
+      font-size: 0.85rem; color: var(--muted);
+      margin-bottom: 0.7rem;
+    }
+    .weather-row {
+      display: grid;
+      grid-template-columns: 7rem 1fr;
+      gap: 0.75rem;
+      padding: 0.45rem 0;
+      border-top: 1px solid var(--border);
+      font-size: 0.95rem;
+    }
+    .weather-row:first-of-type { border-top: 0; }
+    .weather-row .label   { color: var(--gold); font-weight: 600; }
+    .weather-row .summary { color: var(--text); }
   </style>
 </head>
 <body>
   <h1>Tram Board · Admin</h1>
 
-  <div class="tabs" role="tablist">
-    <button class="tab" data-mode="tram" aria-pressed="true">Tram</button>
-    <button class="tab" data-mode="text" aria-pressed="false">Text</button>
-  </div>
-
-  <div class="card pane" data-pane="tram">
+  <div class="card">
     <label for="q">Station (free text — try "<em>stop city</em>")</label>
     <div class="row">
       <input id="q" type="text" placeholder="Kerstingstraße Hannover" autocomplete="off" />
       <button id="apply">Apply</button>
     </div>
     <div id="status" class="status"></div>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" data-tab="tram"    aria-pressed="true">Tram</button>
+    <button class="tab" data-tab="text"    aria-pressed="false">Text</button>
+    <button class="tab" data-tab="weather" aria-pressed="false">Weather</button>
+  </div>
+
+  <div class="card pane" data-pane="tram" style="padding: 1rem;">
+    <div id="preview" class="preview">loading…</div>
+    <div id="meta" class="meta" style="margin-top: 0.5rem;"></div>
   </div>
 
   <div class="card pane" data-pane="text" hidden>
@@ -127,11 +150,12 @@
       <button id="text-apply">Apply</button>
     </div>
     <div id="text-status" class="status"></div>
+    <div id="text-preview" class="preview" style="margin-top: 1rem;">loading…</div>
   </div>
 
-  <div class="card" style="padding: 1rem;">
-    <div id="preview" class="preview">loading…</div>
-    <div id="meta" class="meta" style="margin-top: 0.5rem;"></div>
+  <div class="card pane" data-pane="weather" hidden>
+    <div id="weather-head" class="weather-head">loading weather…</div>
+    <div id="weather-body"></div>
   </div>
 
   <script>
@@ -169,7 +193,7 @@
           const flash = (now - (changedAt[i] || 0)) < 1.5 ? " flash" : "";
           lines.push(
             `<span class="border">│</span>` +
-            `<span class="badge">${escape(pad(dep.line.slice(0,2), 2))}</span>` +
+            `<span class="badge">${escape(padLeft(dep.line.slice(0,2), 2))}</span>` +
             `<span class="dest">${escape(dest)}</span>` +
             `<span class="mins${flash}">${escape(mins)}</span>` +
             `<span class="border">│</span>`
@@ -205,32 +229,34 @@
       ].join("\n");
     }
 
-    let currentMode = "tram";
-    // Local user actions win over server state for this many ms. Covers any
-    // /api/state fetches already in flight when the user clicks a tab.
+    // adminTab tracks which pane the user is looking at; the LED mode (tram/text)
+    // is independent because the Weather tab is admin-only and shouldn't change
+    // what's on the panel.
+    let adminTab = "tram";
     const LOCAL_OVERRIDE_MS = 1500;
     let lastLocalModeChange = 0;
 
-    async function setMode(mode, fromServer) {
-      currentMode = mode;
-      if (!fromServer) lastLocalModeChange = Date.now();
+    async function setTab(tab, fromServer) {
+      adminTab = tab;
       document.querySelectorAll(".tab").forEach(b => {
-        const active = b.dataset.mode === mode;
+        const active = b.dataset.tab === tab;
         b.classList.toggle("active", active);
         b.setAttribute("aria-pressed", active ? "true" : "false");
       });
       document.querySelectorAll(".pane").forEach(p => {
-        p.hidden = p.dataset.pane !== mode;
+        p.hidden = p.dataset.pane !== tab;
       });
-      if (!fromServer) {
+      if (!fromServer && (tab === "tram" || tab === "text")) {
+        lastLocalModeChange = Date.now();
         try {
           await fetch("/api/mode", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mode }),
+            body: JSON.stringify({ mode: tab }),
           });
         } catch (_) { /* ignore — refresh will recover */ }
       }
+      if (tab === "weather") refreshWeather();
     }
 
     async function refresh() {
@@ -239,9 +265,12 @@
         const data = await res.json();
 
         const ignoreServerMode = (Date.now() - lastLocalModeChange) < LOCAL_OVERRIDE_MS;
-        if (!ignoreServerMode && data.mode && data.mode !== currentMode) setMode(data.mode, true);
-        const frame = currentMode === "text" ? renderTextFrame(data) : renderTramFrame(data);
-        document.getElementById("preview").innerHTML = frame;
+        if (!ignoreServerMode && adminTab !== "weather" && data.mode && data.mode !== adminTab) {
+          setTab(data.mode, true);
+        }
+
+        document.getElementById("preview").innerHTML      = renderTramFrame(data);
+        document.getElementById("text-preview").innerHTML = renderTextFrame(data);
 
         const station = data.station_name
           ? `${data.station_name}${data.station_city ? ", " + data.station_city : ""}  ·  ${data.stop_id || ""}`
@@ -250,9 +279,7 @@
           ? `last update ${new Date(data.last_update * 1000).toLocaleTimeString("de-DE", { hour12: false })}`
           : "waiting for first fetch…";
         const err = data.last_error ? `  ·  error: ${data.last_error}` : "";
-        document.getElementById("meta").textContent =
-          currentMode === "text" ? `text mode  ·  ${data.text ? `"${data.text}"` : "no text set"}`
-                                 : `${station}  ·  ${updated}${err}`;
+        document.getElementById("meta").textContent = `${station}  ·  ${updated}${err}`;
 
         if (!document.activeElement || document.activeElement.id !== "q") {
           document.getElementById("q").placeholder = data.station_query || "Kerstingstraße Hannover";
@@ -262,6 +289,31 @@
         }
       } catch (e) {
         document.getElementById("meta").textContent = `cannot reach server: ${e}`;
+      }
+    }
+
+    let weatherLastFetch = 0;
+    async function refreshWeather(force) {
+      const now = Date.now();
+      if (!force && now - weatherLastFetch < 60_000) return;  // throttle to once a minute
+      weatherLastFetch = now;
+      const head = document.getElementById("weather-head");
+      const body = document.getElementById("weather-body");
+      try {
+        const res  = await fetch("/api/weather");
+        const data = await res.json();
+        if (data.error) {
+          head.textContent = data.error;
+          body.innerHTML   = "";
+          return;
+        }
+        head.textContent = `Today · ${data.place || ""}${data.date ? "  ·  " + data.date : ""}`;
+        body.innerHTML   = (data.periods || []).map(p =>
+          `<div class="weather-row"><span class="label">${escape(p.label)}</span><span class="summary">${escape(p.summary)}</span></div>`
+        ).join("");
+      } catch (e) {
+        head.textContent = `cannot reach server: ${e}`;
+        body.innerHTML   = "";
       }
     }
 
@@ -289,6 +341,7 @@
           status.textContent = `→ ${data.station_name}, ${data.station_city} (${data.stop_id})`;
           input.value = "";
           refresh();
+          if (adminTab === "weather") refreshWeather(true);
         }
       } catch (e) {
         status.className = "status error";
@@ -330,7 +383,7 @@
     }
 
     document.querySelectorAll(".tab").forEach(b =>
-      b.addEventListener("click", () => setMode(b.dataset.mode))
+      b.addEventListener("click", () => setTab(b.dataset.tab))
     );
     document.getElementById("apply").addEventListener("click", applyStation);
     document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") applyStation(); });
@@ -339,6 +392,7 @@
 
     refresh();
     setInterval(refresh, 250);   // faster refresh so text scrolls smoothly
+    setInterval(() => { if (adminTab === "weather") refreshWeather(); }, 60_000);
   </script>
 </body>
 </html>

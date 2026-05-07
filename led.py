@@ -75,7 +75,8 @@ def _render_tram(canvas, font, board: tram.BoardState) -> None:
     badge_text  = graphics.Color(255, 255, 255)
     clock_color = graphics.Color(180, 180, 180)
     line_height = 6
-    badge_width = 6
+    # Badge fits up to two characters (4px each) with 1px margin on either side.
+    badge_width = 2 * CHAR_WIDTH + 2
     dest_x      = badge_width + 1
     time_x      = LED_COLS - 2 * CHAR_WIDTH
     visible     = (time_x - dest_x) // CHAR_WIDTH - 1
@@ -87,7 +88,11 @@ def _render_tram(canvas, font, board: tram.BoardState) -> None:
         y = line_height + i * line_height
         for fy in range(y - line_height + 1, y + 1):
             graphics.DrawLine(canvas, 0, fy, badge_width - 1, fy, badge_bg)
-        graphics.DrawText(canvas, font, 1, y, badge_text, dep.line[:2])
+        # Centre the line number inside the badge so single- and double-digit
+        # numbers both look balanced.
+        line_str = dep.line[:2]
+        line_x   = max(1, (badge_width - len(line_str) * CHAR_WIDTH) // 2)
+        graphics.DrawText(canvas, font, line_x, y, badge_text, line_str)
 
         off  = _scroll_offset(i, len(dep.destination), visible)
         text = f" {dep.destination[off:off + visible]:<{visible}}"
