@@ -51,7 +51,9 @@ def api_state():
 @app.get("/api/weather")
 def api_weather():
     cfg = config.load()
-    query = " ".join(p for p in (cfg.station_city, cfg.station_name) if p) or cfg.station_query
+    # Open-Meteo's geocoder only knows cities/towns, not tram stops — so prefer
+    # the resolved city over the full station name.
+    query = cfg.station_city or cfg.station_name or cfg.station_query
     summary = weather.fetch_summary(query)
     return jsonify(summary)
 
