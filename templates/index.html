@@ -105,19 +105,32 @@
     /* ── Weather ─────────────────────────────────────────────────────── */
     .weather-head {
       font-size: 0.85rem; color: var(--muted);
-      margin-bottom: 0.7rem;
+      margin-bottom: 0.6rem;
     }
-    .weather-row {
+    .weather-frame {
+      font-family: ui-monospace, "SF Mono", "Menlo", "DejaVu Sans Mono", monospace;
+      font-size: 16px;
+      line-height: 1;
+      color: var(--text);
+      background: #000;
+      padding: 0.7rem 0.8rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
       display: grid;
-      grid-template-columns: 7rem 1fr;
-      gap: 0.75rem;
-      padding: 0.45rem 0;
-      border-top: 1px solid var(--border);
-      font-size: 0.95rem;
+      grid-template-rows: repeat(5, auto);
+      gap: 0.35rem;
     }
-    .weather-row:first-of-type { border-top: 0; }
-    .weather-row .label   { color: var(--gold); font-weight: 600; }
-    .weather-row .summary { color: var(--text); }
+    .wrow {
+      display: grid;
+      grid-template-columns: 18px 4.2ch 3.5ch 3.5ch;
+      align-items: center;
+      gap: 0.5ch;
+    }
+    .wicon { width: 18px; height: 18px; image-rendering: pixelated; }
+    .wlabel  { color: var(--gold); font-weight: 600; }
+    .wtemp   { color: var(--text); text-align: right; }
+    .wprecip { color: #8ec3ff;     text-align: right; }
+    .weather-empty { color: var(--muted); padding: 1rem 0.2rem; }
   </style>
 </head>
 <body>
@@ -153,9 +166,9 @@
     <div id="text-preview" class="preview" style="margin-top: 1rem;">loading…</div>
   </div>
 
-  <div class="card pane" data-pane="weather" hidden>
+  <div class="card pane" data-pane="weather" hidden style="padding: 1rem;">
     <div id="weather-head" class="weather-head">loading weather…</div>
-    <div id="weather-body"></div>
+    <div id="weather-body" class="weather-frame"></div>
   </div>
 
   <script>
@@ -208,6 +221,78 @@
       return lines.join("\n");
     }
 
+    // Mirror of WEATHER_ICONS in led.py / host/led-driver.py — same 6×6 sprites
+    // and palettes so the admin preview looks like the LED panel.
+    const WEATHER_ICONS = {
+      sun: {
+        rows: ["..XX..", "X....X", ".XXXX.", ".XXXX.", "X....X", "..XX.."],
+        palette: { X: "#ffdc3c" },
+      },
+      cloudy_sun: {
+        rows: ["..X...", "XXX...", ".X.YY.", "YYYYYY", ".YYYY.", "......"],
+        palette: { X: "#ffdc3c", Y: "#b4b4b4" },
+      },
+      cloud: {
+        rows: ["..XX..", ".XXXX.", "XXXXXX", ".XXXX.", "......", "......"],
+        palette: { X: "#b4b4b4" },
+      },
+      rain: {
+        rows: [".XXXX.", "XXXXXX", ".XXXX.", "Y.Y.Y.", ".Y.Y.Y", "......"],
+        palette: { X: "#b4b4b4", Y: "#64aaff" },
+      },
+      snow: {
+        rows: [".XXXX.", "XXXXXX", "......", "Y.Y.Y.", ".Y.Y.Y", "Y.Y.Y."],
+        palette: { X: "#b4b4b4", Y: "#ffffff" },
+      },
+      thunder: {
+        rows: [".XXXX.", "XXXXXX", "..Y...", ".YY...", "..Y...", ".Y...."],
+        palette: { X: "#b4b4b4", Y: "#ffdc3c" },
+      },
+      fog: {
+        rows: ["XXXXXX", "......", "XXXXXX", "......", "XXXXXX", "......"],
+        palette: { X: "#b4b4b4" },
+      },
+    };
+
+    function iconSVG(name) {
+      const spec = WEATHER_ICONS[name] || WEATHER_ICONS.cloud;
+      const cells = [];
+      for (let y = 0; y < spec.rows.length; y++) {
+        const row = spec.rows[y];
+        for (let x = 0; x < row.length; x++) {
+          const c = spec.palette[row[x]];
+          if (c) cells.push(`<rect x="${x}" y="${y}" width="1" height="1" fill="${c}"/>`);
+        }
+      }
+      return `<svg class="wicon" viewBox="0 0 6 6" shape-rendering="crispEdges">${cells.join("")}</svg>`;
+    }
+
+    function renderWeatherFrame(weather) {
+      const head = document.getElementById("weather-head");
+      const body = document.getElementById("weather-body");
+      const periods = (weather && weather.periods) || [];
+      if (!periods.length) {
+        head.textContent = (weather && weather.error) || "loading weather…";
+        body.innerHTML   = `<div class="weather-empty">no forecast yet</div>`;
+        return;
+      }
+      const place = (weather && weather.place) || "";
+      const updated = weather && weather.updated_at
+        ? `updated ${new Date(weather.updated_at * 1000).toLocaleTimeString("de-DE", { hour12: false })}`
+        : "";
+      head.textContent = [place && `Today · ${place}`, updated].filter(Boolean).join("  ·  ");
+      body.innerHTML = periods.slice(0, 5).map(p => {
+        const label  = (p.label || "").slice(0, 4);
+        const temp   = (p.temp_hi != null) ? `${String(Math.round(p.temp_hi)).padStart(2)}°` : " --";
+        const precip = (p.precip != null && p.precip >= 30) ? `${Math.round(p.precip)}%` : "";
+        return `<div class="wrow">${iconSVG(p.icon || "cloud")}` +
+               `<span class="wlabel">${escape(label)}</span>` +
+               `<span class="wtemp">${escape(temp)}</span>` +
+               `<span class="wprecip">${escape(precip)}</span>` +
+               `</div>`;
+      }).join("");
+    }
+
     function renderTextFrame(state) {
       const text  = state.text || "";
       const t0    = state.text_changed_at || 0;
@@ -229,9 +314,8 @@
       ].join("\n");
     }
 
-    // adminTab tracks which pane the user is looking at; the LED mode (tram/text)
-    // is independent because the Weather tab is admin-only and shouldn't change
-    // what's on the panel.
+    // The active admin tab is also the LED mode — Tram, Text, and Weather all
+    // drive what the panel shows.
     let adminTab = "tram";
     const LOCAL_OVERRIDE_MS = 1500;
     let lastLocalModeChange = 0;
@@ -246,7 +330,7 @@
       document.querySelectorAll(".pane").forEach(p => {
         p.hidden = p.dataset.pane !== tab;
       });
-      if (!fromServer && (tab === "tram" || tab === "text")) {
+      if (!fromServer) {
         lastLocalModeChange = Date.now();
         try {
           await fetch("/api/mode", {
@@ -256,7 +340,6 @@
           });
         } catch (_) { /* ignore — refresh will recover */ }
       }
-      if (tab === "weather") refreshWeather();
     }
 
     async function refresh() {
@@ -265,12 +348,13 @@
         const data = await res.json();
 
         const ignoreServerMode = (Date.now() - lastLocalModeChange) < LOCAL_OVERRIDE_MS;
-        if (!ignoreServerMode && adminTab !== "weather" && data.mode && data.mode !== adminTab) {
+        if (!ignoreServerMode && data.mode && data.mode !== adminTab) {
           setTab(data.mode, true);
         }
 
         document.getElementById("preview").innerHTML      = renderTramFrame(data);
         document.getElementById("text-preview").innerHTML = renderTextFrame(data);
+        renderWeatherFrame(data.weather);
 
         const station = data.station_name
           ? `${data.station_name}${data.station_city ? ", " + data.station_city : ""}  ·  ${data.stop_id || ""}`
@@ -289,31 +373,6 @@
         }
       } catch (e) {
         document.getElementById("meta").textContent = `cannot reach server: ${e}`;
-      }
-    }
-
-    let weatherLastFetch = 0;
-    async function refreshWeather(force) {
-      const now = Date.now();
-      if (!force && now - weatherLastFetch < 60_000) return;  // throttle to once a minute
-      weatherLastFetch = now;
-      const head = document.getElementById("weather-head");
-      const body = document.getElementById("weather-body");
-      try {
-        const res  = await fetch("/api/weather");
-        const data = await res.json();
-        if (data.error) {
-          head.textContent = data.error;
-          body.innerHTML   = "";
-          return;
-        }
-        head.textContent = `Today · ${data.place || ""}${data.date ? "  ·  " + data.date : ""}`;
-        body.innerHTML   = (data.periods || []).map(p =>
-          `<div class="weather-row"><span class="label">${escape(p.label)}</span><span class="summary">${escape(p.summary)}</span></div>`
-        ).join("");
-      } catch (e) {
-        head.textContent = `cannot reach server: ${e}`;
-        body.innerHTML   = "";
       }
     }
 
@@ -341,7 +400,6 @@
           status.textContent = `→ ${data.station_name}, ${data.station_city} (${data.stop_id})`;
           input.value = "";
           refresh();
-          if (adminTab === "weather") refreshWeather(true);
         }
       } catch (e) {
         status.className = "status error";
@@ -392,7 +450,6 @@
 
     refresh();
     setInterval(refresh, 250);   // faster refresh so text scrolls smoothly
-    setInterval(() => { if (adminTab === "weather") refreshWeather(); }, 60_000);
   </script>
 </body>
 </html>

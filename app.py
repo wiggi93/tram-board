@@ -32,6 +32,11 @@ def _current_stop_id() -> str:
     return config.load().stop_id
 
 
+def _current_weather_query() -> str:
+    cfg = config.load()
+    return cfg.station_city or cfg.station_name or cfg.station_query
+
+
 @app.get("/")
 def index():
     return render_template("index.html")
@@ -62,8 +67,8 @@ def api_weather():
 def api_set_mode():
     payload = request.get_json(silent=True) or {}
     mode = (payload.get("mode") or "").strip()
-    if mode not in ("tram", "text"):
-        return jsonify(error="mode must be 'tram' or 'text'"), 400
+    if mode not in ("tram", "text", "weather"):
+        return jsonify(error="mode must be 'tram', 'text' or 'weather'"), 400
     cfg = config.load()
     cfg.mode = mode
     config.save(cfg)
@@ -125,6 +130,14 @@ def _start_background_threads(enable_led: bool) -> None:
         daemon=True,
     )
     fetch_thread.start()
+
+    weather_thread = threading.Thread(
+        target=weather.fetch_loop,
+        args=(board, _current_weather_query, stop_event),
+        name="weather",
+        daemon=True,
+    )
+    weather_thread.start()
 
     if enable_led:
         try:

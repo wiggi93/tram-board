@@ -12,7 +12,7 @@ import threading
 import time
 from collections import Counter
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Callable, Optional
 
 import requests
 
@@ -99,22 +99,54 @@ def _geocode(query: str) -> Optional[tuple[float, float, str]]:
         return None
 
 
+def _classify(code: int) -> str:
+    """Map an Open-Meteo WMO code to a small set of icon categories."""
+    if code == 0:                            return "sun"
+    if code in (1, 2):                       return "cloudy_sun"
+    if code == 3:                            return "cloud"
+    if code in (45, 48):                     return "fog"
+    if code in (51, 53, 55, 56, 57,
+                61, 63, 65, 66, 67,
+                80, 81, 82):                 return "rain"
+    if code in (71, 73, 75, 77, 85, 86):     return "snow"
+    if code in (95, 96, 99):                 return "thunder"
+    return "cloud"
+
+
 def _summarise(period_label: str, hours: list[dict]) -> dict:
     if not hours:
-        return {"label": period_label, "summary": "no data"}
+        return {
+            "label":   period_label,
+            "icon":    "cloud",
+            "temp_lo": None,
+            "temp_hi": None,
+            "precip":  0,
+            "summary": "no data",
+        }
     temps  = [h["temperature"] for h in hours if h["temperature"] is not None]
     codes  = [h["code"]        for h in hours if h["code"]        is not None]
     precs  = [h["precip"]      for h in hours if h["precip"]      is not None]
+    dominant = Counter(codes).most_common(1)[0][0] if codes else None
+    icon     = _classify(dominant) if dominant is not None else "cloud"
+    lo = round(min(temps)) if temps else None
+    hi = round(max(temps)) if temps else None
+    precip = int(round(max(precs))) if precs else 0
+
     parts: list[str] = []
-    if codes:
-        dominant = Counter(codes).most_common(1)[0][0]
+    if dominant is not None:
         parts.append(WEATHER_CODE.get(dominant, f"code {dominant}"))
-    if temps:
-        lo, hi = min(temps), max(temps)
-        parts.append(f"{round(lo)}–{round(hi)}°C" if round(lo) != round(hi) else f"{round(lo)}°C")
-    if precs and max(precs) >= 20:
-        parts.append(f"rain {int(max(precs))}%")
-    return {"label": period_label, "summary": ", ".join(parts) or "—"}
+    if lo is not None and hi is not None:
+        parts.append(f"{lo}°C" if lo == hi else f"{lo}–{hi}°C")
+    if precip >= 20:
+        parts.append(f"rain {precip}%")
+    return {
+        "label":   period_label,
+        "icon":    icon,
+        "temp_lo": lo,
+        "temp_hi": hi,
+        "precip":  precip,
+        "summary": ", ".join(parts) or "—",
+    }
 
 
 def _bucket_hours(hourly: dict, today: str, tomorrow: str) -> list[dict]:
@@ -203,3 +235,43 @@ def fetch_summary(query: str) -> dict:
     with _lock:
         _forecast_cache[cache_key] = (now, summary)
     return summary
+
+
+# ── Background refresh ────────────────────────────────────────────────────────
+
+FETCH_INTERVAL = 10 * 60   # seconds — how often the LED-side data gets refreshed
+
+
+def fetch_loop(
+    board,
+    get_query: Callable[[], Optional[str]],
+    stop_event: Optional[threading.Event] = None,
+) -> None:
+    """Periodically refresh the weather forecast on the BoardState.
+
+    Mirrors tram.fetch_loop: pulls the current query each iteration so a
+    station change in the admin UI is picked up without a restart.
+    """
+    last_query: Optional[str] = None
+    while not (stop_event and stop_event.is_set()):
+        query = get_query() or ""
+        if query:
+            data = fetch_summary(query)
+            if "error" in data:
+                board.set_weather_error(data["error"])
+            else:
+                board.set_weather(data.get("periods") or [], data.get("place") or "")
+            last_query = query
+        # Wait, but wake up early if the station changes so the panel updates
+        # quickly after the user picks a new station.
+        wait_left = FETCH_INTERVAL
+        while wait_left > 0 and not (stop_event and stop_event.is_set()):
+            slice_s = min(2.0, wait_left)
+            if stop_event:
+                stop_event.wait(slice_s)
+            else:
+                time.sleep(slice_s)
+            wait_left -= slice_s
+            current = get_query() or ""
+            if current and current != last_query:
+                break  # forces an immediate refresh on station change

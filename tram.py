@@ -57,6 +57,10 @@ class BoardState:
         self._mode:        str = "tram"
         self._text:        str = ""
         self._text_changed_at: float = 0.0
+        self._weather_periods: list[dict] = []
+        self._weather_place: str = ""
+        self._weather_updated_at: float = 0.0
+        self._weather_error: Optional[str] = None
 
     def update(self, new: list[Departure]) -> None:
         with self._lock:
@@ -88,6 +92,17 @@ class BoardState:
                 self._text_changed_at = time.time()
             self._text = text
 
+    def set_weather(self, periods: list[dict], place: str) -> None:
+        with self._lock:
+            self._weather_periods = list(periods)
+            self._weather_place = place
+            self._weather_updated_at = time.time()
+            self._weather_error = None
+
+    def set_weather_error(self, msg: str) -> None:
+        with self._lock:
+            self._weather_error = msg
+
     def snapshot(self) -> dict:
         with self._lock:
             return {
@@ -100,6 +115,12 @@ class BoardState:
                 "mode":         self._mode,
                 "text":         self._text,
                 "text_changed_at": self._text_changed_at,
+                "weather": {
+                    "place":      self._weather_place,
+                    "periods":    list(self._weather_periods),
+                    "updated_at": self._weather_updated_at,
+                    "error":      self._weather_error,
+                },
             }
 
     def render_snapshot(self) -> tuple[list[Optional[Departure]], list[float]]:

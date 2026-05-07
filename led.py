@@ -111,6 +111,129 @@ def _render_tram(canvas, font, board: tram.BoardState) -> None:
     graphics.DrawText(canvas, font, clock_x, 31, clock_color, now_str)
 
 
+# ── Weather ───────────────────────────────────────────────────────────────────
+#
+# 6×6 sprite per icon category. Characters in the rows below map to RGB tuples
+# in the icon's palette. '.' = unlit. Sprites occupy the leftmost 6 px of each
+# 6-px row, so they line up vertically with the 4×6 text font's baseline.
+
+WEATHER_ICONS: dict[str, tuple[list[str], dict[str, tuple[int, int, int]]]] = {
+    "sun": (
+        [
+            "..XX..",
+            "X....X",
+            ".XXXX.",
+            ".XXXX.",
+            "X....X",
+            "..XX..",
+        ],
+        {"X": (255, 220, 60)},
+    ),
+    "cloudy_sun": (
+        [
+            "..X...",
+            "XXX...",
+            ".X.YY.",
+            "YYYYYY",
+            ".YYYY.",
+            "......",
+        ],
+        {"X": (255, 220, 60), "Y": (180, 180, 180)},
+    ),
+    "cloud": (
+        [
+            "..XX..",
+            ".XXXX.",
+            "XXXXXX",
+            ".XXXX.",
+            "......",
+            "......",
+        ],
+        {"X": (180, 180, 180)},
+    ),
+    "rain": (
+        [
+            ".XXXX.",
+            "XXXXXX",
+            ".XXXX.",
+            "Y.Y.Y.",
+            ".Y.Y.Y",
+            "......",
+        ],
+        {"X": (180, 180, 180), "Y": (100, 170, 255)},
+    ),
+    "snow": (
+        [
+            ".XXXX.",
+            "XXXXXX",
+            "......",
+            "Y.Y.Y.",
+            ".Y.Y.Y",
+            "Y.Y.Y.",
+        ],
+        {"X": (180, 180, 180), "Y": (255, 255, 255)},
+    ),
+    "thunder": (
+        [
+            ".XXXX.",
+            "XXXXXX",
+            "..Y...",
+            ".YY...",
+            "..Y...",
+            ".Y....",
+        ],
+        {"X": (180, 180, 180), "Y": (255, 220, 60)},
+    ),
+    "fog": (
+        [
+            "XXXXXX",
+            "......",
+            "XXXXXX",
+            "......",
+            "XXXXXX",
+            "......",
+        ],
+        {"X": (180, 180, 180)},
+    ),
+}
+
+
+def _draw_weather_icon(canvas, name: str, x0: int, y0: int) -> None:
+    rows, palette = WEATHER_ICONS.get(name) or WEATHER_ICONS["cloud"]
+    for dy, row in enumerate(rows):
+        for dx, ch in enumerate(row):
+            rgb = palette.get(ch)
+            if rgb:
+                canvas.SetPixel(x0 + dx, y0 + dy, *rgb)
+
+
+def _render_weather(canvas, font, snap: dict) -> None:
+    weather = snap.get("weather") or {}
+    periods = weather.get("periods") or []
+    err     = weather.get("error")
+    text_color  = graphics.Color(255, 255, 255)
+    label_color = graphics.Color(255, 200, 80)
+
+    if not periods:
+        msg = (err or "loading weather…")[:15]
+        graphics.DrawText(canvas, font, 1, 18, text_color, msg)
+        return
+
+    for i, p in enumerate(periods[:5]):
+        y_icon = 1 + i * 6
+        y_text = y_icon + 5
+        _draw_weather_icon(canvas, p.get("icon", "cloud"), 0, y_icon)
+        label = (p.get("label") or "")[:4]
+        graphics.DrawText(canvas, font, 7, y_text, label_color, f"{label:<4}")
+        temp_hi = p.get("temp_hi")
+        temp_str = f"{temp_hi:>2}°" if isinstance(temp_hi, (int, float)) else " --"
+        graphics.DrawText(canvas, font, 7 + 5 * CHAR_WIDTH, y_text, text_color, temp_str)
+        precip = p.get("precip") or 0
+        if precip >= 30:
+            precip_x = 7 + (5 + 3 + 1) * CHAR_WIDTH   # after label(5) + temp(3) + gap(1)
+            graphics.DrawText(canvas, font, precip_x, y_text, text_color, f"{int(precip)}%")
+
+
 def _render_text(canvas, font_big, text: str, text_t0: float) -> None:
     """Full-screen scrolling text. Text is repeated with a gap so it loops cleanly."""
     if not text:
@@ -135,8 +258,11 @@ def run(board: tram.BoardState) -> None:
     while True:
         canvas.Clear()
         snap = board.snapshot()
-        if snap.get("mode") == "text":
+        mode = snap.get("mode")
+        if mode == "text":
             _render_text(canvas, font_big, snap.get("text") or "", snap.get("text_changed_at") or 0.0)
+        elif mode == "weather":
+            _render_weather(canvas, font, snap)
         else:
             _render_tram(canvas, font, board)
 
