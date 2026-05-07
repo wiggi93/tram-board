@@ -72,31 +72,48 @@ _geo_cache: dict[str, tuple[float, float, str]] = {}
 _forecast_cache: dict[str, tuple[float, dict]] = {}
 
 
-def _geocode(query: str) -> Optional[tuple[float, float, str]]:
+def _geocode(query: str) -> tuple[Optional[tuple[float, float, str]], Optional[str]]:
+    """Resolve a place name to (lat, lon, display_name).
+
+    Returns (loc, error). On success error is None; on failure loc is None and
+    error is a short human-readable reason — split out so callers can surface
+    useful diagnostics instead of a generic "could not locate".
+    """
     if not query:
-        return None
+        return None, "empty query"
     with _lock:
         cached = _geo_cache.get(query)
     if cached:
-        return cached
+        return cached, None
     try:
         r = requests.get(
             GEOCODE_URL,
             params={"name": query, "count": 1, "language": "en", "format": "json"},
             timeout=REQUEST_TIMEOUT,
         )
-        r.raise_for_status()
-        results = r.json().get("results") or []
-        if not results:
-            return None
-        top = results[0]
-        loc = (float(top["latitude"]), float(top["longitude"]), top.get("name") or query)
-        with _lock:
-            _geo_cache[query] = loc
-        return loc
-    except Exception as e:
-        log.warning("Geocoding failed for %r: %s", query, e)
-        return None
+    except requests.Timeout:
+        log.warning("Geocoding timed out for %r", query)
+        return None, "geocoding timeout"
+    except requests.RequestException as e:
+        log.warning("Geocoding network error for %r: %s", query, e)
+        return None, f"geocoding network error: {type(e).__name__}"
+    if r.status_code != 200:
+        log.warning("Geocoding HTTP %s for %r: %s", r.status_code, query, r.text[:200])
+        return None, f"geocoding HTTP {r.status_code}"
+    try:
+        body = r.json()
+    except ValueError:
+        log.warning("Geocoding returned non-JSON for %r: %s", query, r.text[:200])
+        return None, "geocoding returned non-JSON"
+    results = body.get("results") or []
+    if not results:
+        log.info("Geocoder returned no results for %r (raw=%s)", query, str(body)[:200])
+        return None, f"could not locate {query!r}"
+    top = results[0]
+    loc = (float(top["latitude"]), float(top["longitude"]), top.get("name") or query)
+    with _lock:
+        _geo_cache[query] = loc
+    return loc, None
 
 
 def _classify(code: int) -> str:
@@ -193,9 +210,9 @@ def fetch_summary(query: str) -> dict:
     if cached and now - cached[0] < CACHE_TTL:
         return cached[1]
 
-    geo = _geocode(query)
+    geo, geo_err = _geocode(query)
     if not geo:
-        return {"error": f"could not locate {query!r}"}
+        return {"error": geo_err or f"could not locate {query!r}"}
     lat, lon, place = geo
 
     try:
@@ -239,7 +256,8 @@ def fetch_summary(query: str) -> dict:
 
 # ── Background refresh ────────────────────────────────────────────────────────
 
-FETCH_INTERVAL = 10 * 60   # seconds — how often the LED-side data gets refreshed
+FETCH_INTERVAL       = 10 * 60   # seconds — between successful refreshes
+FETCH_RETRY_INTERVAL = 60        # seconds — between retries when last fetch failed
 
 
 def fetch_loop(
@@ -253,18 +271,22 @@ def fetch_loop(
     station change in the admin UI is picked up without a restart.
     """
     last_query: Optional[str] = None
+    last_failed = False
     while not (stop_event and stop_event.is_set()):
         query = get_query() or ""
         if query:
             data = fetch_summary(query)
             if "error" in data:
                 board.set_weather_error(data["error"])
+                last_failed = True
             else:
                 board.set_weather(data.get("periods") or [], data.get("place") or "")
+                last_failed = False
             last_query = query
         # Wait, but wake up early if the station changes so the panel updates
-        # quickly after the user picks a new station.
-        wait_left = FETCH_INTERVAL
+        # quickly after the user picks a new station. Retry sooner after a
+        # failure so transient API blips clear up without a 10-min stall.
+        wait_left = FETCH_RETRY_INTERVAL if last_failed else FETCH_INTERVAL
         while wait_left > 0 and not (stop_event and stop_event.is_set()):
             slice_s = min(2.0, wait_left)
             if stop_event:
