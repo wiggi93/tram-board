@@ -1,45 +1,30 @@
-# Raspberry Pi compose file — runs the web admin AND drives an RGB LED matrix
-# panel from the same container. Requires privileged mode for direct GPIO/PWM
-# access via the rpi-rgb-led-matrix C library.
+# Compose file for a Raspberry Pi running the LED panel.
 #
-# Hardware: Pi 4/5 with HUB75 panel attached (defaults: 64×32, regular GPIO
-# wiring). Tweak the LED_* env vars for other panel sizes or adapter HATs.
+# Architecture: web service in Docker, LED renderer on the host. Docker on
+# Raspberry Pi OS doesn't allow real-time scheduling for cgroup-bound
+# processes, which the LED library needs — driving the panel from a host
+# systemd service is the only reliable path.
 #
-# Usage on the Pi:
+# Setup steps (one-time):
 #   mkdir -p ~/tram-board/data && chmod 777 ~/tram-board/data && cd ~/tram-board
 #   curl -O https://raw.githubusercontent.com/wiggi93/tram-board/master/docker-compose.pi.yml
 #   docker compose -f docker-compose.pi.yml up -d
 #
-# The chmod is needed because the bind-mounted ./data directory must be
-# writable by the container's effective uid (depends on your Docker install:
-# rootful daemons run as root in-container; rootless or userns-remapped
-# daemons run as some other uid). 777 is the simplest portable answer.
+#   # Then install the host-side LED driver (one command):
+#   curl -fsSL https://raw.githubusercontent.com/wiggi93/tram-board/master/host/install.sh \
+#     | sudo bash
 #
 # Update later:
-#   docker compose -f docker-compose.pi.yml pull && docker compose -f docker-compose.pi.yml up -d
+#   docker compose -f docker-compose.pi.yml pull
+#   docker compose -f docker-compose.pi.yml up -d
 
 services:
   tram-board:
-    image: ${IMAGE:-profdrdisco/tram-board:led}
+    image: ${IMAGE:-profdrdisco/tram-board:latest}
     container_name: tram-board
-    privileged: true                  # needed for /dev/mem direct PWM access
-    ports:
-      - "8080:8080"
+    network_mode: host         # so the host LED driver can reach the API at 127.0.0.1:8080
     volumes:
       - ./data:/app/data
     environment:
       - PORT=8080
-      # ── LED panel options (override per your hardware) ───────────────────
-      - LED_ROWS=32
-      - LED_COLS=64
-      - LED_CHAIN=1                   # daisy-chained panels
-      - LED_PARALLEL=1                # parallel chains
-      - LED_BRIGHTNESS=70             # 1–100
-      - LED_PWM_BITS=11               # 1–11
-      - LED_SLOWDOWN_GPIO=2           # 0–4 (raise on faster Pis)
-      - LED_NO_HARDWARE_PULSE=1       # software PWM — avoids conflict with snd_bcm2835.
-                                       # Set to 0 (and disable Pi audio in /boot/firmware/config.txt)
-                                       # for sharper display with no flicker.
-      # - LED_GPIO_MAPPING=adafruit-hat   # uncomment if you use an Adafruit HAT
-    command: ["python", "app.py", "--host", "0.0.0.0", "--port", "8080", "--led"]
     restart: unless-stopped

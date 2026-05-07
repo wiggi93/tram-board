@@ -1,0 +1,30 @@
+[Unit]
+Description=tram-board LED panel driver
+Documentation=https://github.com/wiggi93/tram-board
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/tram-board-led/led-driver.py
+Restart=on-failure
+RestartSec=5
+
+# rgbmatrix needs root for /dev/mem and SCHED_FIFO. The library drops
+# privileges itself after initialising the panel.
+User=root
+
+# Panel + connection settings — edit these, then `systemctl restart tram-board-led`.
+Environment="TRAM_BOARD_URL=http://127.0.0.1:8080"
+Environment="LED_ROWS=32"
+Environment="LED_COLS=64"
+Environment="LED_CHAIN=1"
+Environment="LED_PARALLEL=1"
+Environment="LED_BRIGHTNESS=70"
+Environment="LED_PWM_BITS=11"
+Environment="LED_SLOWDOWN_GPIO=2"
+# Environment="LED_GPIO_MAPPING=adafruit-hat"
+# Environment="LED_NO_HARDWARE_PULSE=1"
+
+[Install]
+WantedBy=multi-user.target
