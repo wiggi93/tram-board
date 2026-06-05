@@ -14,9 +14,15 @@
 #   curl -fsSL https://raw.githubusercontent.com/wiggi93/tram-board/master/host/install.sh \
 #     | sudo bash
 #
-# Update later:
+# Updates: Watchtower (below) polls Docker Hub every 5 min and restarts the
+# tram-board container whenever a new :latest image lands. To force an update
+# manually (or pick up changes to this compose file itself):
 #   docker compose -f docker-compose.pi.yml pull
 #   docker compose -f docker-compose.pi.yml up -d
+#
+# NOTE: Watchtower only updates the Docker container. The host-side LED driver
+# (host/led-driver.py, installed by install.sh) lives outside Docker — you
+# still need to re-run install.sh or curl that file by hand when it changes.
 
 services:
   tram-board:
@@ -27,4 +33,15 @@ services:
       - ./data:/app/data
     environment:
       - PORT=8080
+    restart: unless-stopped
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    # --interval 300  → poll every 5 minutes
+    # --cleanup       → delete the old image after pulling a new one
+    # tram-board      → scope to this container only; ignore anything else on the Pi
+    command: --interval 300 --cleanup tram-board
     restart: unless-stopped
