@@ -261,7 +261,14 @@ def main() -> None:
 
         canvas.Clear()
         mode = snap.get("mode")
-        if mode == "text":
+        if mode == "rotate":
+            interval = max(3, int(snap.get("rotate_interval") or 20))
+            sub = "weather" if int(time.time() / interval) % 2 == 1 else "tram"
+            if sub == "weather":
+                _render_weather(canvas, font, snap)
+            else:
+                _render_tram(canvas, font, snap)
+        elif mode == "text":
             _render_text(canvas, font_big, snap)
         elif mode == "weather":
             _render_weather(canvas, font, snap)

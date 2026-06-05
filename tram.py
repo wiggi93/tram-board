@@ -61,6 +61,7 @@ class BoardState:
         self._weather_place: str = ""
         self._weather_updated_at: float = 0.0
         self._weather_error: Optional[str] = None
+        self._rotate_interval: int = 20
 
     def update(self, new: list[Departure]) -> None:
         with self._lock:
@@ -103,6 +104,10 @@ class BoardState:
         with self._lock:
             self._weather_error = msg
 
+    def set_rotate_interval(self, seconds: int) -> None:
+        with self._lock:
+            self._rotate_interval = max(3, int(seconds))
+
     def snapshot(self) -> dict:
         with self._lock:
             return {
@@ -121,6 +126,7 @@ class BoardState:
                     "updated_at": self._weather_updated_at,
                     "error":      self._weather_error,
                 },
+                "rotate_interval": self._rotate_interval,
             }
 
     def render_snapshot(self) -> tuple[list[Optional[Departure]], list[float]]:

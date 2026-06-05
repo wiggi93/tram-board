@@ -67,13 +67,29 @@ def api_weather():
 def api_set_mode():
     payload = request.get_json(silent=True) or {}
     mode = (payload.get("mode") or "").strip()
-    if mode not in ("tram", "text", "weather"):
-        return jsonify(error="mode must be 'tram', 'text' or 'weather'"), 400
+    if mode not in ("tram", "text", "weather", "rotate"):
+        return jsonify(error="mode must be 'tram', 'text', 'weather' or 'rotate'"), 400
     cfg = config.load()
     cfg.mode = mode
     config.save(cfg)
     board.set_mode(mode)
     return jsonify(mode=mode)
+
+
+@app.post("/api/rotate")
+def api_set_rotate_interval():
+    payload = request.get_json(silent=True) or {}
+    try:
+        interval = int(payload.get("interval"))
+    except (TypeError, ValueError):
+        return jsonify(error="interval must be an integer (seconds)"), 400
+    if interval < 3 or interval > 600:
+        return jsonify(error="interval must be between 3 and 600 seconds"), 400
+    cfg = config.load()
+    cfg.rotate_interval = interval
+    config.save(cfg)
+    board.set_rotate_interval(interval)
+    return jsonify(interval=interval)
 
 
 @app.post("/api/text")
@@ -130,6 +146,8 @@ def _start_background_threads(enable_led: bool) -> None:
         board.set_station(cfg.station_name, cfg.station_city)
     board.set_mode(cfg.mode or "tram")
     board.set_text(cfg.text or "")
+    if cfg.rotate_interval:
+        board.set_rotate_interval(cfg.rotate_interval)
 
     fetch_thread = threading.Thread(
         target=tram.fetch_loop,

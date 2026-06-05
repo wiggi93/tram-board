@@ -20,8 +20,9 @@ class Config:
     stop_id:       str = ""    # cached EFA stop id (resolved from station_query)
     station_name:  str = ""    # resolved display name
     station_city:  str = ""    # resolved parent city
-    mode:          str = "tram"   # "tram" or "text"
+    mode:          str = "tram"   # "tram" | "text" | "weather" | "rotate"
     text:          str = ""        # free-text content for text mode
+    rotate_interval: int = 20      # seconds per view in rotate mode
 
 
 _lock = threading.Lock()
@@ -37,7 +38,10 @@ def load() -> Config:
             try:
                 with open(CONFIG_PATH, encoding="utf-8") as f:
                     data = json.load(f)
-                _cached = Config(**{k: data.get(k, "") for k in Config.__annotations__})
+                # Use the dataclass default for any missing key — otherwise
+                # adding new typed fields (e.g. ints) breaks old configs.
+                defaults = Config()
+                _cached  = Config(**{k: data.get(k, getattr(defaults, k)) for k in Config.__annotations__})
             except Exception as e:
                 log.warning("Could not read %s: %s — starting with empty config.", CONFIG_PATH, e)
                 _cached = Config()

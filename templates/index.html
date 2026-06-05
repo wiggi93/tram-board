@@ -149,6 +149,7 @@
     <button class="tab" data-tab="tram"    aria-pressed="true">Tram</button>
     <button class="tab" data-tab="text"    aria-pressed="false">Text</button>
     <button class="tab" data-tab="weather" aria-pressed="false">Weather</button>
+    <button class="tab" data-tab="rotate"  aria-pressed="false">Rotate</button>
   </div>
 
   <div class="card pane" data-pane="tram" style="padding: 1rem;">
@@ -169,6 +170,21 @@
   <div class="card pane" data-pane="weather" hidden style="padding: 1rem;">
     <div id="weather-head" class="weather-head">loading weather…</div>
     <div id="weather-body" class="weather-frame"></div>
+  </div>
+
+  <div class="card pane" data-pane="rotate" hidden>
+    <label for="rotate-interval">Switch interval (seconds — how long each view stays on screen)</label>
+    <div class="row">
+      <input id="rotate-interval" type="number" min="3" max="600" placeholder="20" autocomplete="off" />
+      <button id="rotate-apply">Apply</button>
+    </div>
+    <div id="rotate-status" class="status"></div>
+    <div id="rotate-stage" style="margin-top: 1rem;">
+      <div id="rotate-preview-tram" class="preview">loading…</div>
+      <div id="rotate-weather-head" class="weather-head" hidden></div>
+      <div id="rotate-preview-weather" class="weather-frame" hidden></div>
+    </div>
+    <div id="rotate-now" class="meta" style="margin-top: 0.5rem;"></div>
   </div>
 
   <script>
@@ -267,9 +283,10 @@
       return `<svg class="wicon" viewBox="0 0 6 6" shape-rendering="crispEdges">${cells.join("")}</svg>`;
     }
 
-    function renderWeatherFrame(weather) {
-      const head = document.getElementById("weather-head");
-      const body = document.getElementById("weather-body");
+    function renderWeatherFrame(weather, headId = "weather-head", bodyId = "weather-body") {
+      const head = document.getElementById(headId);
+      const body = document.getElementById(bodyId);
+      if (!head || !body) return;
       const periods = (weather && weather.periods) || [];
       if (!periods.length) {
         head.textContent = (weather && weather.error) || "loading weather…";
@@ -356,6 +373,7 @@
         document.getElementById("preview").innerHTML      = renderTramFrame(data);
         document.getElementById("text-preview").innerHTML = renderTextFrame(data);
         renderWeatherFrame(data.weather);
+        updateRotatePreview(data);
 
         const station = data.station_name
           ? `${data.station_name}${data.station_city ? ", " + data.station_city : ""}  ·  ${data.stop_id || ""}`
@@ -374,6 +392,71 @@
         }
       } catch (e) {
         document.getElementById("meta").textContent = `cannot reach server: ${e}`;
+      }
+    }
+
+    function updateRotatePreview(state) {
+      const interval = Math.max(3, parseInt(state.rotate_interval, 10) || 20);
+      const periodIndex = Math.floor(Date.now() / 1000 / interval);
+      const sub = (periodIndex % 2 === 1) ? "weather" : "tram";
+      const tramEl    = document.getElementById("rotate-preview-tram");
+      const weatherEl = document.getElementById("rotate-preview-weather");
+      const whHead    = document.getElementById("rotate-weather-head");
+      if (sub === "tram") {
+        tramEl.hidden    = false;
+        weatherEl.hidden = true;
+        whHead.hidden    = true;
+        tramEl.innerHTML = renderTramFrame(state);
+      } else {
+        tramEl.hidden    = true;
+        weatherEl.hidden = false;
+        whHead.hidden    = false;
+        renderWeatherFrame(state.weather, "rotate-weather-head", "rotate-preview-weather");
+      }
+      // Show "now showing X · next switch in Ns".
+      const secsLeft = interval - Math.floor(Date.now() / 1000) % interval;
+      document.getElementById("rotate-now").textContent =
+        `now showing ${sub}  ·  switches in ${secsLeft}s  ·  interval ${interval}s`;
+      // Keep the interval input populated with the current value (don't clobber while typing).
+      const input = document.getElementById("rotate-interval");
+      if (input && document.activeElement !== input) input.placeholder = String(interval);
+    }
+
+    async function applyRotateInterval() {
+      const input  = document.getElementById("rotate-interval");
+      const status = document.getElementById("rotate-status");
+      const button = document.getElementById("rotate-apply");
+      const interval = parseInt(input.value, 10);
+      if (!Number.isFinite(interval) || interval < 3 || interval > 600) {
+        status.className = "status error";
+        status.textContent = "interval must be 3–600 seconds";
+        input.focus();
+        return;
+      }
+      button.disabled = true;
+      status.className = "status";
+      status.textContent = "saving…";
+      try {
+        const res = await fetch("/api/rotate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ interval }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          status.className = "status error";
+          status.textContent = data.error || `error ${res.status}`;
+        } else {
+          status.className = "status ok";
+          status.textContent = `interval set to ${data.interval}s`;
+          input.value = "";
+          refresh();
+        }
+      } catch (e) {
+        status.className = "status error";
+        status.textContent = String(e);
+      } finally {
+        button.disabled = false;
       }
     }
 
@@ -448,6 +531,8 @@
     document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") applyStation(); });
     document.getElementById("text-apply").addEventListener("click", applyText);
     document.getElementById("text-input").addEventListener("keydown", e => { if (e.key === "Enter") applyText(); });
+    document.getElementById("rotate-apply").addEventListener("click", applyRotateInterval);
+    document.getElementById("rotate-interval").addEventListener("keydown", e => { if (e.key === "Enter") applyRotateInterval(); });
 
     refresh();
     setInterval(refresh, 250);   // faster refresh so text scrolls smoothly

@@ -268,7 +268,14 @@ def run(board: tram.BoardState) -> None:
         canvas.Clear()
         snap = board.snapshot()
         mode = snap.get("mode")
-        if mode == "text":
+        if mode == "rotate":
+            interval = max(3, int(snap.get("rotate_interval") or 20))
+            sub = "weather" if int(time.time() / interval) % 2 == 1 else "tram"
+            if sub == "weather":
+                _render_weather(canvas, font, snap)
+            else:
+                _render_tram(canvas, font, board)
+        elif mode == "text":
             _render_text(canvas, font_big, snap.get("text") or "", snap.get("text_changed_at") or 0.0)
         elif mode == "weather":
             _render_weather(canvas, font, snap)
